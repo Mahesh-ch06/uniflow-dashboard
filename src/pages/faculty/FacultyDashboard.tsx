@@ -43,6 +43,7 @@ const meetings = [
 export default function FacultyDashboard() {
   const { user } = useAuth();
   
+  const [myCourses, setMyCourses] = useState<any[]>([]);
   const [stats, setStats] = useState({
     myCourses: 0,
     totalStudents: 0,
@@ -66,9 +67,10 @@ export default function FacultyDashboard() {
       // 2. My Courses
       const { data: coursesData } = await supabase
         .from('courses')
-        .select('id')
+        .select('*')
         .eq('faculty_id', facultyId);
         
+      setMyCourses(coursesData || []);
       const courseIds = (coursesData || []).map(c => c.id);
       
       // 3. Total Students in these courses
@@ -231,7 +233,7 @@ export default function FacultyDashboard() {
                   <span className="text-xs text-muted-foreground">{c.schedule}</span>
                 </div>
                 <h4 className="font-semibold text-foreground">{c.name}</h4>
-                <p className="text-sm text-muted-foreground mt-1">{c.enrolledStudents}/{c.maxCapacity} students • {c.credits} credits</p>
+                <p className="text-sm text-muted-foreground mt-1">{c.enrolled_students || 0}/{c.max_capacity || 60} students • {c.credits} credits</p>
               </div>
             ))}
           </div>

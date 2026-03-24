@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  const INACTIVITY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+  const INACTIVITY_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
   const logout = useCallback((reason?: string) => {
     setUser(null);
@@ -170,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Session Expired</AlertDialogTitle>
             <AlertDialogDescription>
-              You have been inactive for more than 5 minutes. For your security, you have been automatically logged out. Please log in again to continue.
+                Your session has expired. For your security, you have been automatically logged out. Please log in again to continue.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import { ClipboardList, FileText, DollarSign, IndianRupee, BookOpen, Clock3, Globe2, ShieldCheck, UserCircle, BadgeCheck, GraduationCap, Users, Library, CheckCircle2, Bell, AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -82,17 +84,35 @@ export default function StudentDashboard() {
         .single();
 
       if (!studentError && studentData) {
-        const { data: feesData } = await supabase
+                const { data: feesData } = await supabase
           .from('student_fees')
-          .select('amount, status')
+          .select('amount, amount_paid, due_date, status')
           .eq('student_id', studentData.id)
           .neq('status', 'paid');
-        
+
         if (feesData) {
-          const totalPending = feesData.reduce((sum, fee) => sum + Number(fee.amount || 0), 0);
+          const calculateLateFee = (dueDate) => {
+            if (!dueDate) return 0;
+            const due = new Date(dueDate);
+            const now = new Date();
+            if (now > due) {
+              const diffTime = Math.abs(now.getTime() - due.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays * 10;
+            }
+            return 0;
+          };
+
+          const totalPending = feesData.reduce((sum, fee) => {
+            const amount = Number(fee.amount || 0);
+            const paid = Number(fee.amount_paid || 0);
+            const late = fee.status !== 'paid' ? calculateLateFee(fee.due_date) : 0;
+            const totalWithLate = amount + late;
+            const remaining = Math.max(0, totalWithLate - paid);
+            return sum + remaining;
+          }, 0);
+          
           setPendingFees(totalPending > 0 ? "₹" + totalPending.toLocaleString('en-IN') : "₹0");
-        } else {
-                    setPendingFees("₹0");
         }
 
         // Fetch Enrolled Courses & GPA
