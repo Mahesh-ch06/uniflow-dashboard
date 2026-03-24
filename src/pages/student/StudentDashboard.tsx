@@ -84,14 +84,26 @@ export default function StudentDashboard() {
         .single();
 
       if (!studentError && studentData) {
-                const { data: feesData } = await supabase
-          .from('student_fees')
-          .select('amount, amount_paid, due_date, status')
-          .eq('student_id', studentData.id)
-          .neq('status', 'paid');
+        const [feesRes, paymentsRes] = await Promise.all([
+          supabase.from('student_fees').select('id, amount, paid_amount, due_date, status').eq('student_id', studentData.id).neq('status', 'paid'),
+          supabase.from('student_payments').select('fee_id, amount').eq('student_id', studentData.id).eq('status', 'success')
+        ]);
 
-        if (feesData) {
-          const calculateLateFee = (dueDate) => {
+        if (feesRes.error) {
+          console.error(feesRes.error);
+          setPendingFees("₹0");
+        } else {
+          const feesData = feesRes.data || [];
+          const paymentsData = paymentsRes.data || [];
+          
+          const amountMap: Record<string, number> = {};
+          for (const p of paymentsData) {
+            if (p.fee_id) {
+              amountMap[p.fee_id] = Number(((amountMap[p.fee_id] || 0) + Number(p.amount || 0)).toFixed(2));
+            }
+          }
+
+          const calculateLateFee = (dueDate: string | null) => {
             if (!dueDate) return 0;
             const due = new Date(dueDate);
             const now = new Date();
@@ -104,11 +116,15 @@ export default function StudentDashboard() {
           };
 
           const totalPending = feesData.reduce((sum, fee) => {
+            const Math = window.Math;
             const amount = Number(fee.amount || 0);
-            const paid = Number(fee.amount_paid || 0);
+            const rawPaid = Number(fee.paid_amount || 0);
+            const paidFromHistory = Number(amountMap[fee.id] || 0);
+            const effectivePaid = Math.max(rawPaid, paidFromHistory);
+            
             const late = fee.status !== 'paid' ? calculateLateFee(fee.due_date) : 0;
             const totalWithLate = amount + late;
-            const remaining = Math.max(0, totalWithLate - paid);
+            const remaining = Math.max(0, totalWithLate - effectivePaid);
             return sum + remaining;
           }, 0);
           
