@@ -54,6 +54,8 @@ export default function FacultyAttendance() {
   
   // Attendance state mapping hall_ticket_no -> status
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   
   // Filters & Derived state
   const batchOptions = useMemo(() => {
@@ -94,6 +96,60 @@ export default function FacultyAttendance() {
     }
     fetchStudents();
   }, []);
+
+  useEffect(() => {
+    async function fetchPendingRequests() {
+      const { data, error } = await supabase
+        .from('attendance_requests')
+        .select('id, student_id, request_type, subject, request_date, reason, status, created_at')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        if (error.code !== 'PGRST205' && error.code !== '42P01') {
+          toast({ title: 'Failed to load attendance requests', description: error.message, variant: 'destructive' });
+        }
+        return;
+      }
+
+      setPendingRequests(data || []);
+    }
+
+    fetchPendingRequests();
+
+    const channel = supabase
+      .channel(`faculty-attendance-requests-${user?.id || 'unknown'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_requests' },
+        () => fetchPendingRequests(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  const handleRequestDecision = async (requestId: string, status: 'approved' | 'rejected') => {
+    setProcessingRequestId(requestId);
+    try {
+      const { error } = await supabase
+        .from('attendance_requests')
+        .update({ status, reviewed_by: user?.id || null, reviewed_at: new Date().toISOString() })
+        .eq('id', requestId);
+
+      if (error) throw error;
+
+      toast({ title: `Request ${status}`, description: `Attendance request has been ${status}.` });
+      setPendingRequests((prev) => prev.filter((item) => item.id !== requestId));
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
 
   // Fetch & Subscribe to Attendance in Real-time
   useEffect(() => {
@@ -346,6 +402,50 @@ export default function FacultyAttendance() {
           </div>
         </div>
       )}
+
+      <Card className="shadow-sm">
+        <CardHeader className="pb-3 border-b bg-muted/20">
+          <CardTitle className="text-lg">Attendance Requests Awaiting Approval</CardTitle>
+          <CardDescription>Leave and correction requests submitted by students</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {pendingRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending requests.</p>
+          ) : (
+            <div className="space-y-3">
+              {pendingRequests.map((request) => (
+                <div key={request.id} className="border rounded-lg p-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="font-medium capitalize">{request.request_type} • {request.subject || 'General'}</p>
+                      <p className="text-sm text-muted-foreground">Student: {request.student_id} • Date: {request.request_date || 'N/A'}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-success hover:bg-success/90 text-white"
+                        onClick={() => handleRequestDecision(request.id, 'approved')}
+                        disabled={processingRequestId === request.id}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleRequestDecision(request.id, 'rejected')}
+                        disabled={processingRequestId === request.id}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                  {request.reason && <p className="text-sm mt-2 text-muted-foreground">{request.reason}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

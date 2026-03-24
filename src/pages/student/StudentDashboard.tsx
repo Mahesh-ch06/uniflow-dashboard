@@ -132,12 +132,24 @@ export default function StudentDashboard() {
         }
 
         // Fetch Enrolled Courses & GPA
-        const { data: coursesData } = await supabase
+        const { data: coursesDataByUuid, error: coursesErrorByUuid } = await supabase
           .from('student_courses')
           .select('id, grade, status')
           .eq('student_id', studentData.id);
 
-        if (coursesData) {
+        const { data: coursesDataByHall, error: coursesErrorByHall } = await supabase
+          .from('student_courses')
+          .select('id, grade, status')
+          .eq('student_id', user.id);
+
+        const coursesData =
+          (coursesDataByUuid && coursesDataByUuid.length > 0)
+            ? coursesDataByUuid
+            : (coursesDataByHall || []);
+
+        const coursesError = coursesErrorByUuid && coursesErrorByHall ? coursesErrorByUuid : null;
+
+        if (!coursesError && coursesData) {
           const enrolled = coursesData.filter(c => c.status === 'enrolled').length;
           setEnrolledCourses(enrolled.toString());
 
@@ -297,34 +309,49 @@ export default function StudentDashboard() {
         <StatCard title="Pending Fees" value={pendingFees} icon={IndianRupee} />
       </div>
 
+      <div className="bg-card rounded-2xl p-5 sm:p-6 shadow-sm border">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h3 className="font-display font-semibold text-lg text-foreground">Academics & Registration</h3>
+            <p className="text-sm text-muted-foreground mt-1">Register courses and manage your semester selections.</p>
+          </div>
+          <Link to="/student/courses">
+            <Button className="w-full sm:w-auto gap-2">
+              <BookOpen className="h-4 w-4" />
+              Course Registration
+            </Button>
+          </Link>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="bg-card rounded-2xl p-5 sm:p-6 shadow-sm border">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h3 className="font-display font-semibold text-lg text-foreground">Student Profile Details</h3>
-            <Badge variant="secondary" className="gap-1.5 px-2 py-1">
+            <Badge variant="secondary" className="gap-1.5 px-2 py-1 w-fit">
               <UserCircle className="h-4 w-4" /> Identity
             </Badge>
           </div>
           <div className="space-y-3.5">
-            <div className="flex justify-between items-start sm:items-center gap-2 border-b border-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-2 border-b border-border pb-3">
               <span className="text-muted-foreground text-sm shrink-0">Full Name</span>
-              <span className="font-medium text-sm sm:text-base text-right break-words">{user?.name}</span>
+              <span className="font-medium text-sm sm:text-base text-left sm:text-right break-words w-full sm:w-auto">{user?.name}</span>
             </div>
-            <div className="flex justify-between items-start sm:items-center gap-2 border-b border-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-2 border-b border-border pb-3">
               <span className="text-muted-foreground text-sm shrink-0">Hall Ticket Number</span>
-              <span className="font-medium text-sm sm:text-base text-right break-words">{user?.id}</span>
+              <span className="font-medium text-sm sm:text-base text-left sm:text-right break-words w-full sm:w-auto">{user?.id}</span>
             </div>
-            <div className="flex justify-between items-start sm:items-center gap-2 border-b border-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-2 border-b border-border pb-3">
               <span className="text-muted-foreground text-sm shrink-0">Batch</span>
-              <span className="font-medium text-sm sm:text-base text-right break-words">{user?.batch || "Unassigned"}</span>
+              <span className="font-medium text-sm sm:text-base text-left sm:text-right break-words w-full sm:w-auto">{user?.batch || "Unassigned"}</span>
             </div>
-            <div className="flex justify-between items-start sm:items-center gap-2 border-b border-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-2 border-b border-border pb-3">
               <span className="text-muted-foreground text-sm shrink-0">Department</span>
-              <span className="font-medium text-sm sm:text-base text-right break-words">{user?.department || "N/A"}</span>
+              <span className="font-medium text-sm sm:text-base text-left sm:text-right break-words w-full sm:w-auto">{user?.department || "N/A"}</span>
             </div>
-            <div className="flex justify-between items-start sm:items-center gap-2 border-b border-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-2 border-b border-border pb-3">
               <span className="text-muted-foreground text-sm shrink-0">Admission Year</span>
-              <span className="font-medium text-sm sm:text-base text-right break-words">{admissionYear}</span>
+              <span className="font-medium text-sm sm:text-base text-left sm:text-right break-words w-full sm:w-auto">{admissionYear}</span>
             </div>
           </div>
         </div>

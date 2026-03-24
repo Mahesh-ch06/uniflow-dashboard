@@ -98,11 +98,14 @@ export default function DataTable<T extends Record<string, unknown>>({
               </TableRow>
             ) : (
               filtered.map((item, i) => {
-                const itemId = String(item[idKey]);
+                const rawItemId = item[idKey];
+                const itemId = rawItemId === undefined || rawItemId === null || rawItemId === ""
+                  ? `row-${i}`
+                  : String(rawItemId);
                 const isSelected = selectedRows.includes(itemId);
                 
                 return (
-                  <TableRow key={itemId || i} className="hover:bg-muted/30 transition-colors" data-state={isSelected ? "selected" : undefined}>
+                  <TableRow key={itemId} className="hover:bg-muted/30 transition-colors" data-state={isSelected ? "selected" : undefined}>
                     {enableRowSelection && (
                       <TableCell className="w-12">
                         <Checkbox 

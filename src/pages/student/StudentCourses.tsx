@@ -19,6 +19,8 @@ export default function StudentCourses() {
   const { toast } = useToast();
   const [courses, setCourses] = useState<any[]>([]);
   const [myCourses, setMyCourses] = useState<any[]>([]);
+  const [studentCourseKey, setStudentCourseKey] = useState<string>("");
+  const [studentUuid, setStudentUuid] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState<string | null>(null);
 
@@ -31,29 +33,81 @@ export default function StudentCourses() {
   async function fetchCourses() {
     setIsLoading(true);
     try {
+      let resolvedStudentKey = user?.id || "";
+      let hasStudentCoursesTable = true;
+
+      const { data: studentData } = await supabase
+        .from('students')
+        .select('id, hall_ticket_no')
+        .eq('hall_ticket_no', user?.id)
+        .single();
+
+      if (studentData?.id) {
+        setStudentUuid(studentData.id);
+      }
+
       // Fetch all courses
-      const { data: allCourses, error: coursesError } = await supabase
+      let { data: allCourses, error: coursesError } = await supabase
         .from('courses')
-        .select('*')
+        .select('id, code, name, department, credits, faculty_name, semester, enrolled_students, max_capacity, schedule, course_type, created_at')
         .order('created_at', { ascending: false });
+
+      if (coursesError) {
+        const fallbackCourses = await supabase
+          .from('courses')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        allCourses = fallbackCourses.data || [];
+        coursesError = fallbackCourses.error;
+      }
 
       if (coursesError) throw coursesError;
 
-      // Fetch student's enrolled courses
-      const { data: enrolledData, error: enrolledError } = await supabase
+      // Try hall ticket mapping first
+      const { data: enrolledByHallTicket, error: enrolledHallTicketError } = await supabase
         .from('student_courses')
         .select('course_id, status')
         .eq('student_id', user?.id)
         .eq('status', 'enrolled');
 
-      if (enrolledError && enrolledError.code !== 'PGRST116') {
-        throw enrolledError;
+      let enrolledData = enrolledByHallTicket || [];
+
+      if (enrolledHallTicketError?.code === 'PGRST205') {
+        hasStudentCoursesTable = false;
       }
+
+      // If schema expects UUID, or hall-ticket lookup has no rows, fallback to students.id
+      if (hasStudentCoursesTable && (enrolledHallTicketError || (enrolledByHallTicket?.length || 0) === 0) && studentData?.id) {
+        const { data: enrolledByUuid, error: enrolledUuidError } = await supabase
+          .from('student_courses')
+          .select('course_id, status')
+          .eq('student_id', studentData.id)
+          .eq('status', 'enrolled');
+
+        if (enrolledUuidError?.code === 'PGRST205') {
+          hasStudentCoursesTable = false;
+        }
+
+        if (!enrolledUuidError) {
+          enrolledData = enrolledByUuid || [];
+          resolvedStudentKey = studentData.id;
+        } else {
+          resolvedStudentKey = user?.id || "";
+        }
+      } else {
+        resolvedStudentKey = user?.id || "";
+      }
+
+      setStudentCourseKey(resolvedStudentKey);
 
       const enrolledIds = new Set(enrolledData?.map((e: any) => e.course_id) || []);
       
       const available = allCourses?.map(course => ({
         ...course,
+        course_type: (course.course_type || 'elective').toLowerCase(),
+        enrolled_students: Number(course.enrolled_students || 0),
+        max_capacity: Number(course.max_capacity || 0),
         isEnrolled: enrolledIds.has(course.id)
       })) || [];
 
@@ -72,19 +126,36 @@ export default function StudentCourses() {
   const handleRegister = async (courseId: string) => {
     setIsRegistering(courseId);
     try {
-      // Register in student_courses
-      const { error: insertError } = await supabase
-        .from('student_courses')
-        .insert({
-          student_id: user?.id,
-          course_id: courseId,
-          status: 'enrolled'
-        });
+      const candidateKeys = [studentCourseKey, studentUuid, user?.id].filter(Boolean) as string[];
+      let insertError: any = null;
+
+      for (const key of [...new Set(candidateKeys)]) {
+        const { error } = await supabase
+          .from('student_courses')
+          .insert({
+            student_id: key,
+            course_id: courseId,
+            status: 'enrolled'
+          });
+
+        if (!error || error.code === '23505') {
+          insertError = null;
+          break;
+        }
+
+        insertError = error;
+      }
 
       if (insertError) throw insertError;
 
       // Increment enrolled count
-      await supabase.rpc('increment_course_enrollment', { c_id: courseId });
+      const { error: rpcError } = await supabase.rpc('increment_course_enrollment', { c_id: courseId });
+      if (rpcError) {
+        await supabase
+          .from('courses')
+          .update({ enrolled_students: (courses.find(c => c.id === courseId)?.enrolled_students || 0) + 1 })
+          .eq('id', courseId);
+      }
 
       toast({ title: "Success", description: "Successfully registered for course!" });
       await fetchCourses();
@@ -105,14 +176,27 @@ export default function StudentCourses() {
     
     setIsRegistering(courseId);
     try {
-      // Remove from student_courses
-      const { error: deleteError } = await supabase
-        .from('student_courses')
-        .delete()
-        .eq('student_id', user?.id)
-        .eq('course_id', courseId);
+      const candidateKeys = [studentCourseKey, studentUuid, user?.id].filter(Boolean) as string[];
+      let deleteError: any = null;
+      let dropped = false;
 
-      if (deleteError) throw deleteError;
+      for (const key of [...new Set(candidateKeys)]) {
+        const { error } = await supabase
+          .from('student_courses')
+          .delete()
+          .eq('student_id', key)
+          .eq('course_id', courseId);
+
+        if (!error) {
+          deleteError = null;
+          dropped = true;
+          break;
+        }
+
+        deleteError = error;
+      }
+
+      if (!dropped && deleteError) throw deleteError;
 
       toast({ title: "Success", description: "Successfully dropped course." });
       await fetchCourses();
@@ -176,7 +260,7 @@ export default function StudentCourses() {
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center mt-1">
-                    <Clock className="w-3 h-3 mr-1"/> {item.schedule || 'TBD'} � Prof. {item.faculty_name?.split(' ')[1] || 'Unassigned'}
+                    <Clock className="w-3 h-3 mr-1"/> {item.schedule || 'TBD'} • Prof. {item.faculty_name || 'Unassigned'}
                   </div>
                 </div>
               ) },
@@ -201,7 +285,7 @@ export default function StudentCourses() {
                       disabled={isRegistering === item.id || (item.enrolled_students >= item.max_capacity) || item.course_type === 'mandatory'}
                       className="h-8"
                     >
-                      {item.enrolled_students >= item.max_capacity ? 'Full' : (item.course_type === 'mandatory' ? 'Contact Admin' : 'Register')}
+                      {item.enrolled_students >= item.max_capacity ? 'Full' : (item.course_type === 'mandatory' ? 'Contact Admin' : 'Enroll')}
                     </Button>
                   )}
                 </div>
