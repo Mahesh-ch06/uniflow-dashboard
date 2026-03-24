@@ -40,12 +40,25 @@ export default function StudentFees() {
     }
   }, [user]);
 
+  const [studentUUID, setStudentUUID] = useState<string>("");
+
   const fetchData = async () => {
     try {
       setLoading(true);
+      
+      const { data: studentData, error: studentError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('hall_ticket_no', user?.id)
+        .single();
+        
+      if (studentError || !studentData) throw new Error("Student record not found");
+      const currentUUID = studentData.id;
+      setStudentUUID(currentUUID);
+
       const [feesRes, paymentsRes] = await Promise.all([
-        supabase.from("student_fees").select("*").eq("student_id", user?.id),
-        supabase.from("student_payments").select("*").eq("student_id", user?.id).order("created_at", { ascending: false })
+        supabase.from("student_fees").select("*").eq("student_id", currentUUID),
+        supabase.from("student_payments").select("*").eq("student_id", currentUUID).order("created_at", { ascending: false })
       ]);
       if (feesRes.error) throw feesRes.error;
       if (paymentsRes.error) throw paymentsRes.error;
@@ -72,7 +85,7 @@ export default function StudentFees() {
         if (remaining <= 0) continue;
 
         const pRes = await supabase.from("student_payments").insert({
-          student_id: user?.id,
+            student_id: studentUUID,
           fee_id: fee.id,
           amount: remaining,
           payment_method: "card",
