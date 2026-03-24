@@ -11,6 +11,8 @@ export default function StudentDashboard() {
   const [now, setNow] = useState(new Date());
   const [attendanceRate, setAttendanceRate] = useState<string>("Pending...");
   const [pendingFees, setPendingFees] = useState<string>("Pending...");
+  const [enrolledCourses, setEnrolledCourses] = useState<string>("Pending...");
+  const [gpa, setGpa] = useState<string>("Pending...");
   const [consecutiveLates, setConsecutiveLates] = useState(0);
   const [lateWarnings, setLateWarnings] = useState<{message: string; type: "warning"|"destructive"} | null>(null);
   const [showWarningBanner, setShowWarningBanner] = useState(true);
@@ -90,10 +92,50 @@ export default function StudentDashboard() {
           const totalPending = feesData.reduce((sum, fee) => sum + Number(fee.amount || 0), 0);
           setPendingFees(totalPending > 0 ? "₹" + totalPending.toLocaleString('en-IN') : "₹0");
         } else {
-          setPendingFees("₹0");
+                    setPendingFees("₹0");
+        }
+
+        // Fetch Enrolled Courses & GPA
+        const { data: coursesData } = await supabase
+          .from('student_courses')
+          .select('id, grade, status')
+          .eq('student_id', studentData.id);
+
+        if (coursesData) {
+          const enrolled = coursesData.filter(c => c.status === 'enrolled').length;
+          setEnrolledCourses(enrolled.toString());
+
+          // Calculate GPA (A=4, B=3, C=2, D=1, F=0)
+          const gradedCourses = coursesData.filter(c => c.status === 'completed' && c.grade);
+          if (gradedCourses.length > 0) {
+            const gradePoints = {
+              'A': 4.0, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0
+            };
+            let totalPoints = 0;
+            let validGrades = 0;
+            
+            for (const c of gradedCourses) {
+              if (c.grade && gradePoints[c.grade] !== undefined) {
+                totalPoints += gradePoints[c.grade];
+                validGrades++;
+              }
+            }
+            if (validGrades > 0) {
+              setGpa((totalPoints / validGrades).toFixed(2));
+            } else {
+              setGpa("N/A");
+            }
+          } else {
+            setGpa("N/A");
+          }
+        } else {
+            setEnrolledCourses("0");
+            setGpa("N/A");
         }
       } else {
         setPendingFees("₹0");
+        setEnrolledCourses("0");
+        setGpa("N/A");
       }
     }
     fetchData();
@@ -214,8 +256,8 @@ export default function StudentDashboard() {
       {/* Metrics Section */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
         <StatCard title="Attendance Rate" value={attendanceRate} icon={ClipboardList} variant="primary" />
-        <StatCard title="Enrolled Courses" value="Pending..." icon={BookOpen} variant="secondary" />
-        <StatCard title="GPA" value="Pending..." icon={FileText} variant="accent" />
+        <StatCard title="Enrolled Courses" value={enrolledCourses} icon={BookOpen} variant="secondary" />
+        <StatCard title="GPA" value={gpa} icon={FileText} variant="accent" />
         <StatCard title="Pending Fees" value={pendingFees} icon={IndianRupee} />
       </div>
 

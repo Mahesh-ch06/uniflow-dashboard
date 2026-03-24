@@ -34,7 +34,8 @@ import StudentAttendance from "@/pages/student/StudentAttendance";
 import StudentAttendanceWarnings from "@/pages/student/StudentAttendanceWarnings";
 import StudentMarks from "@/pages/student/StudentMarks";
 import StudentLibrary from "@/pages/student/StudentLibrary";
-import StudentFees from "@/pages/student/StudentFees";
+import StudentFees from "./pages/student/StudentFees";
+import StudentCourses from "./pages/student/StudentCourses";
 import StudentTimetable from "@/pages/student/StudentTimetable";
 import StudentNotifications from "@/pages/student/StudentNotifications";
 
