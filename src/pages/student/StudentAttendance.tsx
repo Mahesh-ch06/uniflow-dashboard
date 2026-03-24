@@ -179,6 +179,11 @@ export default function StudentAttendance() {
       }));
   }, [filteredAttendance]);
 
+  const todaysAttendance = useMemo(() => {
+    const todayLocal = new Date().toLocaleDateString();
+    return filteredAttendance.filter(row => row.date === todayLocal);
+  }, [filteredAttendance]);
+
   const fetchAll = async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -545,12 +550,46 @@ export default function StudentAttendance() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid grid-cols-3 w-full md:w-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="log">Date-wise Log</TabsTrigger>
-          <TabsTrigger value="requests">Leave & Corrections</TabsTrigger>
+      <Tabs defaultValue="today" className="space-y-4">
+        <TabsList className="grid grid-cols-2 md:flex md:flex-row w-full md:w-auto h-auto">
+          <TabsTrigger value="today" className="flex-1">Today</TabsTrigger>
+          <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
+          <TabsTrigger value="log" className="flex-1">Date-wise Log</TabsTrigger>
+          <TabsTrigger value="requests" className="flex-1">Leave & Corrections</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="today" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Today's Classes</CardTitle>
+              <CardDescription>Track today's attendance records to ensure you were marked present</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-muted-foreground">Loading attendance...</p>
+              ) : (
+                <DataTable
+                  data={todaysAttendance}
+                  searchKeys={["courseName", "markedBy"]}
+                  searchPlaceholder="Search today's classes..."
+                  columns={[
+                    { key: "courseName", label: "Subject" },
+                    { key: "markedBy", label: "Faculty" },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (item) => (
+                        <Badge variant="outline" className={cn("capitalize", statusStyles[item.status as keyof typeof statusStyles])}>
+                          {String(item.status)}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
           <Card>
