@@ -1,0 +1,2 @@
+ALTER TABLE student_payments ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'success';
+ALTER TABLE student_payments ADD COLUMN IF NOT EXISTS remarks TEXT;

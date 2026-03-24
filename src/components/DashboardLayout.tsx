@@ -1,20 +1,29 @@
 import { ReactNode, useState } from "react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, BookOpen, Users, ClipboardList, DollarSign,
   Bell, Calendar, BarChart3, UserCircle, LogOut, Menu, X,
-  GraduationCap, FileText, Settings, ChevronRight
+  GraduationCap, FileText, Settings, ChevronRight, Briefcase, FileSignature, MapPin, Search, ChevronDown, Award
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
+interface SubNavItem {
+  label: string;
+  path: string;
+}
 
 interface NavItem {
   label: string;
   icon: React.ElementType;
-  path: string;
+  path?: string;
+  subItems?: SubNavItem[];
+  minYear?: number;
 }
 
 const adminNav: NavItem[] = [
@@ -32,7 +41,14 @@ const adminNav: NavItem[] = [
 const facultyNav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/faculty" },
   { label: "My Courses", icon: BookOpen, path: "/faculty/courses" },
-  { label: "Attendance", icon: ClipboardList, path: "/faculty/attendance" },
+  { 
+    label: "Attendance", 
+    icon: ClipboardList, 
+    subItems: [
+      { label: "Mark Attendance", path: "/faculty/attendance" },
+      { label: "Edit / View Records", path: "/faculty/attendance/edit" },
+    ]
+  },
   { label: "Marks", icon: FileText, path: "/faculty/marks" },
   { label: "Students", icon: Users, path: "/faculty/students" },
   { label: "Profile", icon: UserCircle, path: "/faculty/profile" },
@@ -40,10 +56,30 @@ const facultyNav: NavItem[] = [
 
 const studentNav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/student" },
-  { label: "Attendance", icon: ClipboardList, path: "/student/attendance" },
+  { 
+    label: "Attendance", 
+    icon: ClipboardList, 
+    subItems: [
+      { label: "Daily Attendance", path: "/student/attendance" },
+      { label: "Attendance Warnings", path: "/student/attendance-warnings" },
+    ]
+  },
   { label: "Marks", icon: FileText, path: "/student/marks" },
+  { label: "Results", icon: Award, path: "/student/result" },
+  { 
+    label: "Exams", 
+    icon: FileSignature, 
+    subItems: [
+      { label: "Exam Timetable", path: "/student/exam-timetable" },
+      { label: "Hall Ticket", path: "/student/ticket" },
+      { label: "Seating Arrangement", path: "/student/seating" },
+      { label: "Previous Papers", path: "/student/papers" }
+    ]
+  },
+  { label: "Library", icon: BookOpen, path: "/student/library" },
   { label: "Fees", icon: DollarSign, path: "/student/fees" },
   { label: "Timetable", icon: Calendar, path: "/student/timetable" },
+  { label: "Placements", icon: Briefcase, path: "/student/placement", minYear: 3 },
   { label: "Notifications", icon: Bell, path: "/student/notifications" },
   { label: "Profile", icon: UserCircle, path: "/student/profile" },
 ];
@@ -64,6 +100,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   if (!user) return null;
 
   const config = roleConfig[user.role];
+
+  let yearOfStudy = 1;
+  if (user?.role === 'student' && user.id) {
+    const admissionYearRaw = parseInt('20' + user.id.substring(0, 2), 10);
+    const date = new Date();
+    const currentYearDate = date.getFullYear();
+    const currentMonth = date.getMonth() + 1;
+    yearOfStudy = currentYearDate - admissionYearRaw + (currentMonth >= 7 ? 1 : 0);
+    yearOfStudy = Math.max(1, Math.min(yearOfStudy, 4));
+  }
+
+  const visibleNav = config.nav.filter(item => !item.minYear || yearOfStudy >= item.minYear);
 
   const handleLogout = () => {
     logout();
@@ -89,22 +137,63 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {config.nav.map((item) => {
-          const isActive = location.pathname === item.path;
+        {visibleNav.map((item) => {
+          const isActive = item.path ? location.pathname === item.path : location.pathname.startsWith("/student/") && item.subItems?.some(s => location.pathname.includes(s.path));
+          
+          if (item.subItems) {
+            return (
+              <Collapsible key={item.label} defaultOpen={isActive}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200",
+                      isActive
+                        ? "bg-sidebar-primary/10 text-sidebar-primary font-medium"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="w-5 h-5 shrink-0" />
+                      {sidebarOpen && <span className="font-medium">{item.label}</span>}
+                    </div>
+                    {sidebarOpen && <ChevronDown className="w-4 h-4 transition-transform group-data-[state=open]:rotate-180" />}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-1 mt-1 pl-10">
+                  {sidebarOpen && item.subItems.map(subItem => (
+                    <button
+                      key={subItem.path}
+                      onClick={() => { navigate(subItem.path); setMobileOpen(false); }}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
+                        location.pathname === subItem.path
+                          ? "text-sidebar-primary font-medium bg-sidebar-primary/5"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      )}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50 shrink-0" />
+                      <span className="truncate">{subItem.label}</span>
+                    </button>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          }
+
           return (
             <button
-              key={item.path}
-              onClick={() => { navigate(item.path); setMobileOpen(false); }}
+              key={item.label}
+              onClick={() => { if(item.path) { navigate(item.path); setMobileOpen(false); } }}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200",
-                isActive
+                location.pathname === item.path
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               )}
             >
               <item.icon className="w-5 h-5 shrink-0" />
               {sidebarOpen && <span className="font-medium">{item.label}</span>}
-              {isActive && sidebarOpen && <ChevronRight className="w-4 h-4 ml-auto" />}
+              {location.pathname === item.path && sidebarOpen && <ChevronRight className="w-4 h-4 ml-auto" />}
             </button>
           );
         })}
@@ -119,7 +208,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {sidebarOpen && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">{user.email}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">
+                {user.role === 'student' && user.batch ? `Batch: ${user.batch}` : user.email}
+              </p>
             </div>
           )}
         </div>
@@ -135,7 +226,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen flex w-full">
+    <div className="min-h-[100dvh] flex w-full">
       {/* Desktop sidebar */}
       <aside
         className={cn(
@@ -169,18 +260,21 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 lg:px-6 shadow-card">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => { if (window.innerWidth < 1024) setMobileOpen(true); else setSidebarOpen(!sidebarOpen); }}>
+        <header className="h-16 bg-card border-b border-border flex items-center justify-between px-3 lg:px-6 shadow-card min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { if (window.innerWidth < 1024) setMobileOpen(true); else setSidebarOpen(!sidebarOpen); }}>
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
-            <div>
-              <h2 className="font-display text-lg font-semibold text-foreground">
-                {config.nav.find(n => n.path === location.pathname)?.label || "Dashboard"}
+            <div className="min-w-0 truncate">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-foreground truncate">
+                {visibleNav.find(n => n.path === location.pathname)?.label || 
+                 visibleNav.find(n => n.subItems?.some(s => s.path === location.pathname))?.subItems?.find(s => s.path === location.pathname)?.label || 
+                 "Dashboard"}
               </h2>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 lg:gap-3">
+            <ThemeToggle />
             <Button variant="ghost" size="icon" className="relative" onClick={() => navigate(`/${user.role}/notifications`)}>
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-destructive" />

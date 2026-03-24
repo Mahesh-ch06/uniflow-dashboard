@@ -1,10 +1,12 @@
 import DataTable from "@/components/DataTable";
 import { courses } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
-
-const myCourses = courses.filter(c => c.facultyId === "F001");
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function FacultyCourses() {
+  const { user } = useAuth();
+  const myCourses = courses.filter(c => c.facultyId === user?.id);
+
   return (
     <div className="space-y-6">
       <div>

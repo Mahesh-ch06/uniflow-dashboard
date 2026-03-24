@@ -1,25 +1,31 @@
 import DataTable from "@/components/DataTable";
-import { marksRecords } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
-
-const myMarks = marksRecords.filter(m => m.studentId === "S001");
+import { useAuth } from "@/contexts/AuthContext";
+import { useEffect, useState } from "react";
 
 export default function StudentMarks() {
+  const { user } = useAuth();
+  
+  // Later we can implement real Supabase fetch here.
+  // We're leaving it fresh without mock data.
+  const myMarks: any[] = [];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-display font-bold text-foreground">My Marks & Grades</h1>
-        <p className="text-muted-foreground">View your academic performance</p>
+        <p className="text-muted-foreground">View your academic performance ({user?.name})</p>
       </div>
       <DataTable
         data={myMarks as unknown as Record<string, unknown>[]}
         searchKeys={["courseName"]}
         columns={[
           { key: "courseName", label: "Course" },
-          { key: "assignment1", label: "Asgn 1" },
-          { key: "midterm", label: "Midterm" },
-          { key: "assignment2", label: "Asgn 2" },
-          { key: "final", label: "Final" },
+          { key: "classTest", label: "Class Test" },
+          { key: "labTest", label: "Lab Test" },
+          { key: "mids", label: "Mids" },
+          { key: "sem", label: "Sem" },
+          { key: "project", label: "Project" },
           { key: "total", label: "Total" },
           { key: "grade", label: "Grade", render: (item) => <Badge variant="outline" className="font-bold">{String(item.grade)}</Badge> },
         ]}

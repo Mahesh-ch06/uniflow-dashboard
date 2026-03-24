@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Column<T> {
   key: string;
@@ -14,16 +15,48 @@ interface DataTableProps<T> {
   data: T[];
   searchKeys?: string[];
   searchPlaceholder?: string;
+  enableRowSelection?: boolean;
+  selectedRows?: string[];
+  onRowSelectionChange?: (selectedIds: string[]) => void;
+  idKey?: keyof T;
 }
 
 export default function DataTable<T extends Record<string, unknown>>({
-  columns, data, searchKeys = [], searchPlaceholder = "Search..."
+  columns, 
+  data, 
+  searchKeys = [], 
+  searchPlaceholder = "Search...",
+  enableRowSelection = false,
+  selectedRows = [],
+  onRowSelectionChange,
+  idKey = 'id' as keyof T
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
 
   const filtered = search && searchKeys.length
     ? data.filter(item => searchKeys.some(key => String(item[key] ?? "").toLowerCase().includes(search.toLowerCase())))
     : data;
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!onRowSelectionChange) return;
+    if (checked) {
+      const allIds = filtered.map(item => String(item[idKey]));
+      onRowSelectionChange(allIds);
+    } else {
+      onRowSelectionChange([]);
+    }
+  };
+
+  const handleSelectRow = (checked: boolean, id: string) => {
+    if (!onRowSelectionChange) return;
+    if (checked) {
+      onRowSelectionChange([...selectedRows, id]);
+    } else {
+      onRowSelectionChange(selectedRows.filter(rowId => rowId !== id));
+    }
+  };
+
+  const isAllSelected = filtered.length > 0 && filtered.every(item => selectedRows.includes(String(item[idKey])));
 
   return (
     <div className="space-y-4">
@@ -38,10 +71,19 @@ export default function DataTable<T extends Record<string, unknown>>({
           />
         </div>
       )}
-      <div className="rounded-xl border bg-card shadow-card overflow-hidden">
+      <div className="w-full">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
+              {enableRowSelection && (
+                <TableHead className="w-12">
+                  <Checkbox 
+                    checked={isAllSelected}
+                    onCheckedChange={handleSelectAll}
+                    aria-label="Select all"
+                  />
+                </TableHead>
+              )}
               {columns.map(col => (
                 <TableHead key={col.key} className="font-display font-semibold text-foreground">{col.label}</TableHead>
               ))}
@@ -50,20 +92,34 @@ export default function DataTable<T extends Record<string, unknown>>({
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={columns.length + (enableRowSelection ? 1 : 0)} className="text-center py-8 text-muted-foreground">
                   No records found
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((item, i) => (
-                <TableRow key={i} className="hover:bg-muted/30 transition-colors">
-                  {columns.map(col => (
-                    <TableCell key={col.key}>
-                      {col.render ? col.render(item) : String(item[col.key] ?? "")}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              filtered.map((item, i) => {
+                const itemId = String(item[idKey]);
+                const isSelected = selectedRows.includes(itemId);
+                
+                return (
+                  <TableRow key={itemId || i} className="hover:bg-muted/30 transition-colors" data-state={isSelected ? "selected" : undefined}>
+                    {enableRowSelection && (
+                      <TableCell className="w-12">
+                        <Checkbox 
+                          checked={isSelected}
+                          onCheckedChange={(checked) => handleSelectRow(!!checked, itemId)}
+                          aria-label={`Select row ${itemId}`}
+                        />
+                      </TableCell>
+                    )}
+                    {columns.map(col => (
+                      <TableCell key={col.key}>
+                        {col.render ? col.render(item) : String(item[col.key] ?? "")}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
