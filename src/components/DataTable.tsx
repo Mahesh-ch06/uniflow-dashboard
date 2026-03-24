@@ -21,7 +21,7 @@ interface DataTableProps<T> {
   idKey?: keyof T;
 }
 
-export default function DataTable<T extends Record<string, unknown>>({
+export default function DataTable<T extends object>({
   columns, 
   data, 
   searchKeys = [], 
@@ -33,8 +33,12 @@ export default function DataTable<T extends Record<string, unknown>>({
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
 
+  const getFieldValue = (item: T, key: string) => {
+    return (item as Record<string, unknown>)[key];
+  };
+
   const filtered = search && searchKeys.length
-    ? data.filter(item => searchKeys.some(key => String(item[key] ?? "").toLowerCase().includes(search.toLowerCase())))
+    ? data.filter(item => searchKeys.some(key => String(getFieldValue(item, key) ?? "").toLowerCase().includes(search.toLowerCase())))
     : data;
 
   const handleSelectAll = (checked: boolean) => {
@@ -117,7 +121,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                     )}
                     {columns.map(col => (
                       <TableCell key={col.key}>
-                        {col.render ? col.render(item) : String(item[col.key] ?? "")}
+                        {col.render ? col.render(item) : String(getFieldValue(item, col.key) ?? "")}
                       </TableCell>
                     ))}
                   </TableRow>
