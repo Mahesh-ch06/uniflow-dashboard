@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import { adminStats, monthlyAttendanceData, departmentEnrollment, feeCollectionData } from "@/lib/mock-data";
 import { supabase } from "@/lib/supabase";
-import { Users, GraduationCap, BookOpen, Building2, TrendingUp, DollarSign, Bell, ClipboardList, Clock3, Globe2, Languages, Landmark, FileText } from "lucide-react";
+import { Users, GraduationCap, BookOpen, Building2, TrendingUp, IndianRupee, Bell, ClipboardList, Clock3, Globe2, Languages, Landmark, FileText } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -108,8 +108,8 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Attendance Rate" value={`${adminStats.attendanceRate}%`} icon={ClipboardList} trend="2% improvement" trendUp />
-        <StatCard title="Fee Collection" value={`${adminStats.feeCollectionRate}%`} icon={DollarSign} trend="$245K pending" />
-        <StatCard title="Pending Fees" value={`$${(adminStats.pendingFees / 1000).toFixed(0)}K`} icon={TrendingUp} />
+        <StatCard title="Fee Collection" value={`${adminStats.feeCollectionRate}%`} icon={IndianRupee} trend="₹245K pending" />
+        <StatCard title="Pending Fees" value={`₹${(adminStats.pendingFees / 1000).toFixed(0)}K`} icon={TrendingUp} />
         <StatCard title="Notifications" value={adminStats.activeNotifications} icon={Bell} />
       </div>
 

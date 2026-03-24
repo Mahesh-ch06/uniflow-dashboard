@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { allStudents, timetable } from "@/lib/mock-data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Users, Search, Save, CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -13,351 +13,338 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 type AttendanceStatus = "present" | "absent" | "late";
 
-const statusStyles: Record<AttendanceStatus, string> = {
-  present: "bg-success/10 text-success border-success/30",
-  absent: "bg-destructive/10 text-destructive border-destructive/30",
-  late: "bg-warning/10 text-warning border-warning/30",
-};
+interface StudentData {
+  id: string;
+  name: string;
+  hall_ticket_no: string;
+  batch_name: string;
+}
 
 export default function FacultyAttendance() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedBatch, setSelectedBatch] = useState("");
-  const [selectedHour, setSelectedHour] = useState("");
+  
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [attendanceByContext, setAttendanceByContext] = useState<Record<string, Record<string, AttendanceStatus>>>({});
-  const [submittedByContext, setSubmittedByContext] = useState<Record<string, boolean>>({});
-  const [editingByContext, setEditingByContext] = useState<Record<string, boolean>>({});
+  
+  // Data states
+  const [allStudents, setAllStudents] = useState<StudentData[]>([]);
+  const [selectedBatch, setSelectedBatch] = useState<string>("");
+  const [selectedCourse, setSelectedCourse] = useState<string>("Computer Networks");
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Attendance state mapping hall_ticket_no -> status
+  const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
+  
+  // Filters & Derived state
+  const batchOptions = useMemo(() => {
+    const batches = new Set(allStudents.map(s => s.batch_name));
+    return Array.from(batches).filter(Boolean).sort();
+  }, [allStudents]);
 
-  const [existingStatusByStudent, setExistingStatusByStudent] = useState<Record<string, AttendanceStatus>>({});
+  const displayedStudents = useMemo(() => {
+    if (!selectedBatch) return [];
+    return allStudents.filter(s => 
+      s.batch_name === selectedBatch && 
+      (s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.hall_ticket_no.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [allStudents, selectedBatch, searchQuery]);
 
-  const batchOptions = useMemo(
-    () => {
-      const batches = new Set(allStudents.filter(s => s.role === 'student' && s.batch).map(s => s.batch as string));
-      return Array.from(batches).sort((a, b) => a.localeCompare(b));
-    },
-    [],
-  );
+  const stats = useMemo(() => {
+    const total = displayedStudents.length;
+    if (total === 0) return { present: 0, absent: 0, late: 0, percentage: 0 };
+    const present = displayedStudents.filter(s => attendance[s.hall_ticket_no] === 'present').length;
+    const absent = displayedStudents.filter(s => attendance[s.hall_ticket_no] === 'absent').length;
+    const late = displayedStudents.filter(s => attendance[s.hall_ticket_no] === 'late').length;
+    return { total, present, absent, late, percentage: Math.round(((present + late) / total) * 100) };
+  }, [displayedStudents, attendance]);
 
-  const hourOptions = useMemo(
-    () => [...new Set(timetable.map((item) => item.startTime))].sort((a, b) => a.localeCompare(b)),
-    [],
-  );
-
-  const selectedContextKey = useMemo(
-    () => (selectedBatch && selectedHour ? `${selectedBatch}__${selectedHour}` : ""),
-    [selectedBatch, selectedHour],
-  );
-
-  const batchStudents = useMemo(() => {
-    if (!selectedBatch) {
-      return [];
-    }
-    return allStudents.filter((student) => student.role === "student" && student.batch === selectedBatch);
-  }, [selectedBatch]);
-
-  // Fetch already submitted records from db for given day/batch 
+  // Load Students
   useEffect(() => {
-    if (!selectedBatch || !selectedHour) return;
+    async function fetchStudents() {
+      setIsLoading(true);
+      const { data, error } = await supabase.from('students').select('*');
+      if (error) {
+        toast({ title: "Error loading students", description: error.message, variant: "destructive" });
+      } else {
+        setAllStudents(data || []);
+        const uniqueBatches = Array.from(new Set(data?.map(s => s.batch_name).filter(Boolean)));
+        if (uniqueBatches.length > 0 && !selectedBatch) setSelectedBatch(uniqueBatches[0] as string);
+      }
+      setIsLoading(false);
+    }
+    fetchStudents();
+  }, []);
+
+  // Fetch & Subscribe to Attendance in Real-time
+  useEffect(() => {
+    if (!selectedBatch || !selectedCourse || !selectedDate) return;
     
-    async function fetchExistingAttendance() {
-      const dateStr = new Date().toISOString().split('T')[0];
+    async function loadAttendance() {
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
         .eq('batch_name', selectedBatch)
-        .eq('course_name', selectedBatch) // using selectedBatch as course_name temporarily
-        .eq('date', dateStr);
+        .eq('course_name', selectedCourse)
+        .eq('date', selectedDate);
 
+      // Default all to present first
+      const attMap: Record<string, AttendanceStatus> = {};
+      displayedStudents.forEach(s => attMap[s.hall_ticket_no] = "present");
+      
       if (data && data.length > 0) {
-        const fetchedMarks: Record<string, AttendanceStatus> = {};
         data.forEach(record => {
-          fetchedMarks[record.student_id] = record.status as AttendanceStatus;
+          attMap[record.student_id] = record.status as AttendanceStatus;
         });
-
-        setAttendanceByContext((prev) => ({ ...prev, [selectedContextKey]: fetchedMarks }));
-        setSubmittedByContext((prev) => ({ ...prev, [selectedContextKey]: true }));
-        setEditingByContext((prev) => ({ ...prev, [selectedContextKey]: false }));
-      } else {
-        // Init with null or default 'present' if new
-        const initialMarks: Record<string, AttendanceStatus> = {};
-        batchStudents.forEach((student) => {
-          initialMarks[student.id] = "present";
-        });
-        setAttendanceByContext((prev) => ({ ...prev, [selectedContextKey]: initialMarks }));
-        setSubmittedByContext((prev) => ({ ...prev, [selectedContextKey]: false }));
       }
+      setAttendance(attMap);
     }
-    
-    fetchExistingAttendance();
-  }, [selectedBatch, selectedHour, selectedContextKey, batchStudents]);
 
-  const selectedAttendance = selectedContextKey ? attendanceByContext[selectedContextKey] ?? {} : {};
-  const isSubmitted = selectedContextKey ? Boolean(submittedByContext[selectedContextKey]) : false;
-  const isEditing = selectedContextKey ? Boolean(editingByContext[selectedContextKey]) : false;
-  const canEditRows = !isSubmitted || isEditing;
+    loadAttendance();
+
+    // Realtime subscription
+    const channelId = `attendance_${selectedBatch}_${Date.now()}`;
+    const channel = supabase.channel(channelId)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'attendance', 
+          filter: `batch_name=eq.${selectedBatch}` 
+        }, 
+        (payload) => {
+          const newRecord = payload.new as any;
+          if (newRecord && newRecord.date === selectedDate && newRecord.course_name === selectedCourse) {
+            setAttendance(prev => ({ ...prev, [newRecord.student_id]: newRecord.status as AttendanceStatus }));
+          }
+        })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedBatch, selectedCourse, selectedDate, displayedStudents.length]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
-    if (!selectedContextKey || !canEditRows) {
-      return;
-    }
-
-    setAttendanceByContext((prev) => ({
-      ...prev,
-      [selectedContextKey]: {
-        ...(prev[selectedContextKey] ?? {}),
-        [studentId]: status,
-      },
-    }));
+    setAttendance(prev => ({ ...prev, [studentId]: status }));
   };
 
-  const handleSubmitAttendance = async () => {
-    if (!selectedContextKey || batchStudents.length === 0) return;
-    
+  const handleBulkChange = (status: AttendanceStatus) => {
+    const newAtt = { ...attendance };
+    displayedStudents.forEach(s => newAtt[s.hall_ticket_no] = status);
+    setAttendance(newAtt);
+  };
+
+  const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const attendanceData = { ...selectedAttendance };
-      const dateStr = new Date().toISOString().split('T')[0];
-      
-      // Auto-absent rule: if student has 3 consecutive lates, 4th time becomes absent
-      const studentsMarkedLate = batchStudents.filter(s => (attendanceData[s.id] || 'present') === 'late');
-      
-      if (studentsMarkedLate.length > 0) {
-        const { data: recentHistory } = await supabase
-          .from('attendance')
-          .select('student_id, status, date')
-          .in('student_id', studentsMarkedLate.map(s => s.id))
-          .order('date', { ascending: false });
-          
-        if (recentHistory) {
-          for (const student of studentsMarkedLate) {
-            const history = recentHistory.filter(r => r.student_id === student.id && r.date < dateStr);
-            let prevLates = 0;
-            for (const record of history) {
-              if (record.status === 'late') {
-                prevLates++;
-              } else {
-                break;
-              }
-            }
-            if (prevLates >= 3) {
-              attendanceData[student.id] = 'absent';
-              toast({
-                title: "Attendance Override",
-                description: `${student.name} was changed to Absent due to 3 prior consecutive lates.`,
-                variant: "destructive"
-              });
-            }
-          }
-        }
-      }
-
-      const recordsToUpsert = batchStudents.map(student => ({
-        student_id: student.id,
-        course_name: selectedBatch, 
+      const records = displayedStudents.map(student => ({
+        student_id: student.hall_ticket_no,
         batch_name: selectedBatch,
-        date: dateStr,
-        status: attendanceData[student.id] || 'present',
-        marked_by_faculty: user?.name || 'Faculty'
+        course_name: selectedCourse,
+        date: selectedDate,
+        status: attendance[student.hall_ticket_no] || 'present'
       }));
 
-      const { error } = await supabase.from('attendance').upsert(recordsToUpsert, {
-        onConflict: 'student_id,date,course_name'
-      });
-
+      const { error } = await supabase.from('attendance').upsert(records, { onConflict: 'student_id, date, course_name' });
       if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Attendance marked successfully for " + selectedBatch,
-      });
-
-      // Update local state to reflect any overrides (like auto-absent)
-      setAttendanceByContext((prev) => ({
-        ...prev,
-        [selectedContextKey]: attendanceData,
-      }));
-      setSubmittedByContext((prev) => ({ ...prev, [selectedContextKey]: true }));
-      setEditingByContext((prev) => ({ ...prev, [selectedContextKey]: false }));
+      toast({ title: "Success", description: "Attendance pushed to live systems." });
     } catch (error: any) {
-      toast({
-        title: "Submission Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Submission Error", description: error.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleEditAttendance = () => {
-    if (!selectedContextKey) {
-      return;
-    }
-
-    setEditingByContext((prev) => ({ ...prev, [selectedContextKey]: true }));
-  };
-
-  const presentCount = Object.values(selectedAttendance).filter((value) => value === "present").length;
-  const absentCount = Object.values(selectedAttendance).filter((value) => value === "absent").length;
-  const lateCount = Object.values(selectedAttendance).filter((value) => value === "late").length;
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-display font-bold text-foreground">Mark Attendance</h1>
-        <p className="text-muted-foreground">Select batch and hour, mark present/absent, then submit attendance</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Batch</p>
-          <Select value={selectedBatch} onValueChange={setSelectedBatch}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select batch" />
-            </SelectTrigger>
-            <SelectContent>
-              {batchOptions.map((batch) => (
-                <SelectItem key={batch} value={batch}>
-                  {batch}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight inline-flex items-center gap-2">
+            <Users className="h-6 w-6 text-primary" />
+            Live System Attendance
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Real-time synchronization across devices and enterprise tracking.
+          </p>
         </div>
-
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Hour</p>
-          <Select value={selectedHour} onValueChange={setSelectedHour}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select hour" />
-            </SelectTrigger>
-            <SelectContent>
-              {hourOptions.map((hour) => (
-                <SelectItem key={hour} value={hour}>
-                  {hour}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-3 w-3">
+             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+             <span className="relative inline-flex rounded-full h-3 w-3 bg-success"></span>
+          </span>
+          <span className="text-sm font-medium text-success">Synced</span>
         </div>
       </div>
 
-      {!selectedBatch || !selectedHour ? (
-        <p className="text-sm text-muted-foreground">Choose both batch and hour to start marking attendance.</p>
-      ) : batchStudents.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No students found for the selected batch.</p>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="outline" className={cn("capitalize", statusStyles.present)}>
-              Present: {presentCount}
-            </Badge>
-            <Badge variant="outline" className={cn("capitalize", statusStyles.absent)}>
-              Absent: {absentCount}
-            </Badge>
-            <Badge variant="outline" className={cn("capitalize", statusStyles.late)}>
-              Late: {lateCount}
-            </Badge>
-            {isSubmitted && !isEditing && <Badge variant="secondary">Attendance Submitted</Badge>}
+      <Card>
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-6">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Batch / Section</label>
+            <Select value={selectedBatch} onValueChange={setSelectedBatch} disabled={isLoading}>
+              <SelectTrigger><SelectValue placeholder="Select Batch" /></SelectTrigger>
+              <SelectContent>
+                {batchOptions.length === 0 && <SelectItem value="empty" disabled>Loading...</SelectItem>}
+                {batchOptions.map(b => (
+                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Course</label>
+            <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Computer Networks">Computer Networks</SelectItem>
+                <SelectItem value="Database Systems">Database Systems</SelectItem>
+                <SelectItem value="Operating Systems">Operating Systems</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Date</label>
+            <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Search</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="By Name or Hall Ticket" className="pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-          <div className="rounded-xl border bg-card shadow-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="font-display font-semibold text-foreground">Student ID</TableHead>
-                  <TableHead className="font-display font-semibold text-foreground">Student</TableHead>
-                  <TableHead className="font-display font-semibold text-foreground">Department</TableHead>
-                  <TableHead className="font-display font-semibold text-foreground">Batch</TableHead>
-                  <TableHead className="font-display font-semibold text-foreground">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {batchStudents.map((student) => {
-                  const status = selectedAttendance[student.id] ?? "present";
-
-                  return (
-                    <TableRow key={student.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell>{student.id}</TableCell>
-                      <TableCell>{student.name}</TableCell>
-                      <TableCell>{student.department}</TableCell>
-                      <TableCell>{selectedBatch}</TableCell>
-                      <TableCell>
-                        {canEditRows ? (
-                          <div className="flex items-center gap-1.5">
-                            <Button 
-                              size="sm" 
-                              variant={status === "present" ? "default" : "outline"}
-                              className={cn(
-                                "h-8 w-11 px-0 text-xs font-medium cursor-pointer transition-colors", 
-                                status === "present" 
-                                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-transparent" 
-                                  : "text-muted-foreground hover:text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50"
-                              )}
-                              onClick={() => handleStatusChange(student.id, "present")}
-                              title="Present"
-                            >
-                              P
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant={status === "absent" ? "default" : "outline"}
-                              className={cn(
-                                "h-8 w-11 px-0 text-xs font-medium cursor-pointer transition-colors", 
-                                status === "absent" 
-                                  ? "bg-red-500 hover:bg-red-600 text-white border-transparent" 
-                                  : "text-muted-foreground hover:text-red-600 hover:border-red-300 hover:bg-red-50"
-                              )}
-                              onClick={() => handleStatusChange(student.id, "absent")}
-                              title="Absent"
-                            >
-                              A
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant={status === "late" ? "default" : "outline"}
-                              className={cn(
-                                "h-8 w-11 px-0 text-xs font-medium cursor-pointer transition-colors", 
-                                status === "late" 
-                                  ? "bg-amber-500 hover:bg-amber-600 text-white border-transparent" 
-                                  : "text-muted-foreground hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50"
-                              )}
-                              onClick={() => handleStatusChange(student.id, "late")}
-                              title="Late"
-                            >
-                              L
-                            </Button>
-                          </div>
-                        ) : (
-                          <Badge variant="outline" className={cn("capitalize", statusStyles[status])}>
-                            {status}
-                          </Badge>
-                        )}
-                      </TableCell>
+      {selectedBatch && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <Card className="lg:col-span-3 border-border shadow-sm">
+            <CardHeader className="pb-3 border-b flex flex-row items-center justify-between bg-muted/20">
+              <div>
+                <CardTitle className="text-lg">Class Roster</CardTitle>
+                <CardDescription>Records automatically pre-filled and sync live</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="h-8 shadow-sm" onClick={() => handleBulkChange('present')}>
+                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-success" /> All Present
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 shadow-sm" onClick={() => handleBulkChange('absent')}>
+                  <XCircle className="mr-1.5 h-3.5 w-3.5 text-destructive" /> All Absent
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-muted/10">
+                  <TableRow>
+                    <TableHead className="w-[60px] pl-6 text-xs upper">Sl No</TableHead>
+                    <TableHead className="text-xs upper">Hall Ticket</TableHead>
+                    <TableHead className="text-xs upper">Name</TableHead>
+                    <TableHead className="text-right pr-6 text-xs upper">Action Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayedStudents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">No students in this view.</TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    displayedStudents.map((student, idx) => {
+                      const status = attendance[student.hall_ticket_no] || 'present';
+                      return (
+                        <TableRow key={student.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="pl-6 font-medium text-muted-foreground/60">{idx + 1}</TableCell>
+                          <TableCell className="font-mono text-sm">{student.hall_ticket_no}</TableCell>
+                          <TableCell className="font-medium">{student.name}</TableCell>
+                          <TableCell className="pr-6">
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant={status === "present" ? "default" : "outline"}
+                                className={cn("h-7 px-3 text-xs w-[80px]", status === "present" && "bg-success/90 hover:bg-success text-white border-transparent")}
+                                onClick={() => handleStatusChange(student.hall_ticket_no, "present")}
+                              >Present</Button>
+                              <Button
+                                size="sm"
+                                variant={status === "absent" ? "default" : "outline"}
+                                className={cn("h-7 px-3 text-xs w-[80px]", status === "absent" && "bg-destructive/90 hover:bg-destructive text-white border-transparent")}
+                                onClick={() => handleStatusChange(student.hall_ticket_no, "absent")}
+                              >Absent</Button>
+                              <Button
+                                size="sm"
+                                variant={status === "late" ? "default" : "outline"}
+                                className={cn("h-7 px-3 text-xs w-[80px]", status === "late" && "bg-warning/90 hover:bg-warning text-white border-transparent")}
+                                onClick={() => handleStatusChange(student.hall_ticket_no, "late")}
+                              >Late</Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
-          <div className="flex items-center gap-3">
-            {isSubmitted && !isEditing ? (
-              <Button type="button" variant="outline" onClick={handleEditAttendance}>
-                Edit Attendance
-              </Button>
-            ) : (
-              <Button type="button" onClick={handleSubmitAttendance} disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : isEditing ? "Save Changes" : "Submit Attendance"}
-              </Button>
-            )}
+          <div className="space-y-4">
+            <Card className="shadow-sm">
+              <CardHeader className="pb-2 border-b bg-muted/20">
+                <CardTitle className="text-sm font-medium">Session Metrics</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl border border-primary/10 mb-6">
+                  <span className="text-6xl font-bold tracking-tighter text-primary drop-shadow-sm">{stats.percentage}<span className="text-3xl">%</span></span>
+                  <span className="text-xs font-semibold text-primary/70 uppercase tracking-wider mt-2">Class Attendance</span>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-sm p-2 rounded-md hover:bg-success/5 transition-colors">
+                    <span className="flex items-center gap-2 font-medium text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success"/> Present</span>
+                    <span className="font-bold text-base">{stats.present}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm p-2 rounded-md hover:bg-destructive/5 transition-colors">
+                    <span className="flex items-center gap-2 font-medium text-muted-foreground"><XCircle className="h-4 w-4 text-destructive"/> Absent</span>
+                    <span className="font-bold text-base">{stats.absent}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm p-2 rounded-md hover:bg-warning/5 transition-colors">
+                    <span className="flex items-center gap-2 font-medium text-muted-foreground"><Clock className="h-4 w-4 text-warning"/> Late</span>
+                    <span className="font-bold text-base">{stats.late}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Button 
+              className="w-full h-14 text-base font-semibold shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+              onClick={handleSubmit}
+              disabled={isSubmitting || displayedStudents.length === 0}
+            >
+              {isSubmitting ? (
+                 <><AlertCircle className="mr-2 h-5 w-5 animate-pulse" /> Pushing to DB...</>
+              ) : (
+                 <><Save className="mr-2 h-5 w-5" /> Save Attendance</>
+              )}
+            </Button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

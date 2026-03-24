@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import DataTable from "@/components/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { cn, calculateLateFee } from "@/lib/utils";
@@ -124,7 +124,7 @@ export default function AdminFees() {
           feeType: p.student_fees?.fee_type
         })));
       }
-    } catch(e) { console.error(e) }
+    } catch {}
   };
 
   const fetchAllStudents = async () => {
@@ -132,9 +132,7 @@ export default function AdminFees() {
       const { data, error } = await supabase.from('students').select('id, name, hall_ticket_no, department');
       if (error) throw error;
       setAllStudents(data || []);
-    } catch (error) {
-      console.error("Error fetching students list", error);
-    }
+    } catch {}
   };
 
   const fetchFees = async () => {
@@ -274,6 +272,10 @@ export default function AdminFees() {
     if (!reverseDialog) return;
     setIsReversing(true);
     try {
+      if (!reverseReason.trim()) {
+        throw new Error("Reason is required when marking unpaid or reversing payment");
+      }
+
       let newPaidAmount = Number(reverseDialog.paid_amount || 0);
 
       // If a specific payment is being reversed
@@ -290,7 +292,22 @@ export default function AdminFees() {
           newPaidAmount -= Number(paymentToReverse.amount);
         }
       } else {
-        // Just arbitrarily resetting or there are no payments
+        const reversalReceiptNo = `REV-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+        const { error: logReasonError } = await supabase
+          .from('student_payments')
+          .insert({
+            student_id: reverseDialog.student_id,
+            fee_id: reverseDialog.id,
+            amount: 0,
+            payment_method: 'online',
+            status: 'failed',
+            receipt_no: reversalReceiptNo,
+            remarks: reverseReason.trim(),
+          });
+
+        if (logReasonError) throw logReasonError;
+
         newPaidAmount = 0;
       }
 
@@ -314,6 +331,56 @@ export default function AdminFees() {
       toast({ title: "Error reversing payment", description: error.message, variant: "destructive" });
     } finally {
       setIsReversing(false);
+    }
+  };
+
+  const handleResolveReverifyRequest = async (payment: any, approve: boolean) => {
+    try {
+      const { data: feeRecord, error: feeFetchError } = await supabase
+        .from('student_fees')
+        .select('id, amount, due_date, student_id')
+        .eq('id', payment.fee_id)
+        .single();
+
+      if (feeFetchError || !feeRecord) throw feeFetchError || new Error('Fee record not found');
+
+      if (approve) {
+        const lateFee = feeRecord.due_date ? calculateLateFee(String(feeRecord.due_date)) : 0;
+        const totalWithLate = Number(feeRecord.amount || 0) + lateFee;
+
+        // Instead of purely relying on current "success" payments which might have been marked failed,
+        // we use the amount the student requested in the reverify claim (which restores previously valid amounts).
+        const claimedAmount = Math.max(0, Number(payment.amount || 0));
+        const normalizedDue = Number(totalWithLate.toFixed(2));
+        
+        let nextStatus = 'partial';
+        if (claimedAmount <= 0) nextStatus = 'unpaid';
+        if (claimedAmount >= normalizedDue) nextStatus = 'paid';
+
+        const { error: feeUpdateError } = await supabase
+          .from('student_fees')
+          .update({ status: nextStatus, paid_amount: claimedAmount })
+          .eq('id', payment.fee_id);
+
+        if (feeUpdateError) throw feeUpdateError;
+      }
+
+      const { error: paymentUpdateError } = await supabase
+        .from('student_payments')
+        .update({
+          status: approve ? 'reverify_approved' : 'reverify_rejected',
+          remarks: approve
+            ? `Re-verification approved by admin. Fee restored to ₹${Number(payment.amount || 0).toLocaleString("en-IN")}.`
+            : 'Re-verification reviewed by admin. Unpaid status retained.',
+        })
+        .eq('id', payment.id);
+
+      if (paymentUpdateError) throw paymentUpdateError;
+
+      toast({ title: approve ? 'Re-verification approved' : 'Re-verification rejected' });
+      fetchData();
+    } catch (error: any) {
+      toast({ title: 'Unable to review request', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -928,10 +995,33 @@ export default function AdminFees() {
                 { key: "amount", label: "Amount", render: (item) => <span className={cn("font-semibold", item.status === 'failed' ? "text-muted-foreground line-through" : "text-emerald-600")}>₹{Number(item.amount).toLocaleString('en-IN')}</span> },
                 { key: "created_at", label: "Date", render: (item) => new Date(String(item.created_at)).toLocaleString('en-IN') },
                 { key: "status", label: "Status", render: (item) => (
-                  <Badge variant="outline" className={cn("capitalize px-2", item.status === 'failed' ? "bg-red-50 text-red-600 border-red-200" : "bg-emerald-50 text-emerald-600 border-emerald-200")}>
-                     {item.status === 'failed' ? <XCircle className="w-3 h-3 mr-1 inline" /> : <CheckCircle className="w-3 h-3 mr-1 inline" />}
+                  <Badge variant="outline" className={cn(
+                    "capitalize px-2",
+                    item.status === 'failed'
+                      ? "bg-red-50 text-red-600 border-red-200"
+                      : item.status === 'reverify_requested'
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                  )}>
+                     {item.status === 'failed'
+                       ? <XCircle className="w-3 h-3 mr-1 inline" />
+                       : item.status === 'reverify_requested'
+                         ? <Clock className="w-3 h-3 mr-1 inline" />
+                         : <CheckCircle className="w-3 h-3 mr-1 inline" />}
                      {String(item.status || 'success')}
                   </Badge>
+                )},
+                { key: "actions", label: "", render: (item) => (
+                  item.status === 'reverify_requested' ? (
+                    <div className="flex gap-2 justify-end">
+                      <Button size="sm" variant="outline" onClick={() => handleResolveReverifyRequest(item, false)}>
+                        Keep Unpaid
+                      </Button>
+                      <Button size="sm" onClick={() => handleResolveReverifyRequest(item, true)}>
+                        Approve & Mark Paid
+                      </Button>
+                    </div>
+                  ) : null
                 )}
               ]}
             />
@@ -1036,22 +1126,19 @@ export default function AdminFees() {
                   </SelectContent>
                 </Select>
               </div>
-              {reversePaymentId !== 'none' && (
-                <div className="space-y-2">
-                  <Label>Reason for Reversal</Label>
-                  <Input 
-                    placeholder="e.g., Bounced check, incorrect amount..." 
-                    value={reverseReason} 
-                    onChange={(e) => setReverseReason(e.target.value)} 
-                    required={reversePaymentId !== 'none'}
-                  />
-                  <p className="text-xs text-muted-foreground">This reason will be shown to the student.</p>
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label>Reason for Reversal / Unpaid Mark</Label>
+                <Input 
+                  placeholder="e.g., Bounced check, incorrect amount..." 
+                  value={reverseReason} 
+                  onChange={(e) => setReverseReason(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">This reason will be shown to the student.</p>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setReverseDialog(null)} disabled={isReversing}>Cancel</Button>
-              <Button variant="destructive" onClick={handleReversePayment} disabled={isReversing || (reversePaymentId !== 'none' && !reverseReason.trim())}>
+              <Button variant="destructive" onClick={handleReversePayment} disabled={isReversing || !reverseReason.trim()}>
                 {isReversing ? "Processing..." : "Confirm Reversal"}
               </Button>
             </DialogFooter>
