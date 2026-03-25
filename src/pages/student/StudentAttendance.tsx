@@ -440,6 +440,41 @@ export default function StudentAttendance() {
         </CardContent>
       </Card>
 
+<div id="today" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Today's Classes</CardTitle>
+              <CardDescription>Track today's attendance records to ensure you were marked present</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-muted-foreground">Loading attendance...</p>
+              ) : (
+                <DataTable
+                  data={todaysAttendance}
+                  searchKeys={["courseName", "markedBy"]}
+                  searchPlaceholder="Search today's classes..."
+                  columns={[
+                    { key: "courseName", label: "Subject" },
+                    { key: "markedBy", label: "Faculty" },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (item) => (
+                        <Badge variant="outline" className={cn("capitalize", statusStyles[item.status as keyof typeof statusStyles])}>
+                          {String(item.status)}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="text-sm text-muted-foreground">
           Download official attendance reports for submission and record keeping.
@@ -550,48 +585,17 @@ export default function StudentAttendance() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="today" className="space-y-4">
-        <TabsList className="grid grid-cols-2 md:flex md:flex-row w-full md:w-auto h-auto">
-          <TabsTrigger value="today" className="flex-1">Today</TabsTrigger>
-          <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
-          <TabsTrigger value="log" className="flex-1">Date-wise Log</TabsTrigger>
-          <TabsTrigger value="requests" className="flex-1">Leave & Corrections</TabsTrigger>
-        </TabsList>
+      
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => document.getElementById('overview')?.scrollIntoView({behavior: 'smooth'})}>Overview</Button>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => document.getElementById('log')?.scrollIntoView({behavior: 'smooth'})}>Date-wise Log</Button>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => document.getElementById('requests')?.scrollIntoView({behavior: 'smooth'})}>Leave & Corrections</Button>
+        </div>
+        
 
-        <TabsContent value="today" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Today's Classes</CardTitle>
-              <CardDescription>Track today's attendance records to ensure you were marked present</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <p className="text-muted-foreground">Loading attendance...</p>
-              ) : (
-                <DataTable
-                  data={todaysAttendance}
-                  searchKeys={["courseName", "markedBy"]}
-                  searchPlaceholder="Search today's classes..."
-                  columns={[
-                    { key: "courseName", label: "Subject" },
-                    { key: "markedBy", label: "Faculty" },
-                    {
-                      key: "status",
-                      label: "Status",
-                      render: (item) => (
-                        <Badge variant="outline" className={cn("capitalize", statusStyles[item.status as keyof typeof statusStyles])}>
-                          {String(item.status)}
-                        </Badge>
-                      ),
-                    },
-                  ]}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        
 
-        <TabsContent value="overview" className="space-y-4">
+        <div id="overview" className="space-y-4 pt-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" /> Attendance Trend</CardTitle>
@@ -664,9 +668,9 @@ export default function StudentAttendance() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
 
-        <TabsContent value="log" className="space-y-4">
+        <div id="log" className="space-y-4 pt-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Date-wise Attendance Log</CardTitle>
@@ -699,9 +703,9 @@ export default function StudentAttendance() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
 
-        <TabsContent value="requests" className="space-y-4">
+        <div id="requests" className="space-y-4 pt-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Apply Leave / Request Correction</CardTitle>
@@ -782,8 +786,8 @@ export default function StudentAttendance() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      
     </div>
   );
 }

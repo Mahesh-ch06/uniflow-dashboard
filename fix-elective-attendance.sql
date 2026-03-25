@@ -1,0 +1,1 @@
+ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_batch_name_fkey;

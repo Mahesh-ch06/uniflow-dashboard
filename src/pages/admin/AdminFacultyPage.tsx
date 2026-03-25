@@ -4,17 +4,22 @@ import { useToast } from '@/hooks/use-toast';
 import DataTable from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Users } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export default function AdminFaculty() {
   const [faculty, setFaculty] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ staff_id: '', name: '', email: '', department: '', phone: '', password: '' });
+  const [allBatches, setAllBatches] = useState<string[]>([]);
+  const [selectedBatches, setSelectedBatches] = useState<string[]>([]);
+  const [activeFacultyForBatches, setActiveFacultyForBatches] = useState<any>(null);
   const { toast } = useToast();
 
   const fetchFaculty = async () => {
@@ -28,8 +33,17 @@ export default function AdminFaculty() {
     setLoading(false);
   };
 
+  const fetchBatches = async () => {
+    const { data, error } = await supabase.from('students').select('batch_name');
+    if (data && !error) {
+      const batches = Array.from(new Set(data.map((s: any) => s.batch_name).filter(Boolean))).sort();
+      setAllBatches(batches as string[]);
+    }
+  };
+
   useEffect(() => {
     fetchFaculty();
+    fetchBatches();
   }, []);
 
   const handleOpenDialog = (item?: any) => {
@@ -85,6 +99,35 @@ export default function AdminFaculty() {
     }
   };
 
+  const handleOpenBatchDialog = (item: any) => {
+    setActiveFacultyForBatches(item);
+    setSelectedBatches(item.assigned_batches || []);
+    setBatchDialogOpen(true);
+  };
+
+  const handleToggleBatch = (batch: string) => {
+    setSelectedBatches(prev => 
+      prev.includes(batch) ? prev.filter(b => b !== batch) : [...prev, batch]
+    );
+  };
+
+  const handleSaveBatches = async () => {
+    if (!activeFacultyForBatches) return;
+    try {
+      const { error } = await supabase
+        .from('faculty')
+        .update({ assigned_batches: selectedBatches })
+        .eq('id', activeFacultyForBatches.id);
+      
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Assigned batches updated successfully' });
+      setBatchDialogOpen(false);
+      fetchFaculty();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -106,15 +149,35 @@ export default function AdminFaculty() {
           { key: 'name', label: 'Name' },
           { key: 'email', label: 'Email' },
           { key: 'department', label: 'Department', render: (item: any) => <Badge variant="outline">{String(item.department)}</Badge> },
+          { 
+            key: 'assigned_batches', 
+            label: 'Assigned Batches', 
+            render: (item: any) => (
+              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                {(item.assigned_batches || []).slice(0, 2).map((batch: string) => (
+                  <Badge key={batch} variant="secondary" className="text-[10px]">{batch}</Badge>
+                ))}
+                {(item.assigned_batches || []).length > 2 && (
+                  <Badge variant="secondary" className="text-[10px]">+{item.assigned_batches.length - 2} more</Badge>
+                )}
+                {(!item.assigned_batches || item.assigned_batches.length === 0) && (
+                  <span className="text-xs text-muted-foreground italic">None assigned</span>
+                )}
+              </div>
+            ) 
+          },
           {
             key: 'actions',
             label: 'Actions',
             render: (item: any) => (
               <div className="flex items-center gap-2">
-                <Button size="icon" variant="ghost" onClick={() => handleOpenDialog(item)}>
+                <Button size="icon" variant="ghost" className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50" onClick={() => handleOpenBatchDialog(item)} title="Assign Batches">
+                  <Users className="w-4 h-4" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => handleOpenDialog(item)} title="Edit Faculty">
                   <Edit className="w-4 h-4" />
                 </Button>
-                <Button size="icon" variant="ghost" className="text-destructive" onClick={() => handleDelete(item.id as string)}>
+                <Button size="icon" variant="ghost" className="text-destructive" onClick={() => handleDelete(item.id as string)} title="Delete">
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
@@ -186,6 +249,59 @@ export default function AdminFaculty() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave}>{editingId ? 'Update' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Batch Assignment Dialog */}
+      <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Assign Batches</DialogTitle>
+            <DialogDescription>
+              Select the batches that {activeFacultyForBatches?.name} is allowed to take attendance for.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex justify-between items-center pb-2 border-b">
+              <span className="text-sm font-medium">Available Batches</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setSelectedBatches(selectedBatches.length === allBatches.length ? [] : [...allBatches])}
+                className="h-8 text-xs"
+              >
+                {selectedBatches.length === allBatches.length ? 'Deselect All' : 'Select All'}
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-1">
+              {allBatches.length === 0 ? (
+                <p className="text-sm text-muted-foreground col-span-2 text-center py-4">No batches found. Add some students first.</p>
+              ) : (
+                allBatches.map((batch) => (
+                  <div key={batch} className="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors">
+                    <Checkbox 
+                      id={`batch-${batch}`} 
+                      checked={selectedBatches.includes(batch)}
+                      onCheckedChange={() => handleToggleBatch(batch)}
+                    />
+                    <Label 
+                      htmlFor={`batch-${batch}`}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                    >
+                      {batch}
+                    </Label>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground mt-2">
+              <span className="font-semibold">{selectedBatches.length}</span> batches selected out of {allBatches.length}.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveBatches}>Save Assignments</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

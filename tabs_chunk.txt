@@ -1,0 +1,234 @@
+<Tabs defaultValue="today" className="space-y-4">
+        <TabsList className="grid grid-cols-2 md:flex md:flex-row w-full md:w-auto h-auto">
+          <TabsTrigger value="today" className="flex-1">Today</TabsTrigger>
+          <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
+          <TabsTrigger value="log" className="flex-1">Date-wise Log</TabsTrigger>
+          <TabsTrigger value="requests" className="flex-1">Leave & Corrections</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="today" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Today's Classes</CardTitle>
+              <CardDescription>Track today's attendance records to ensure you were marked present</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-muted-foreground">Loading attendance...</p>
+              ) : (
+                <DataTable
+                  data={todaysAttendance}
+                  searchKeys={["courseName", "markedBy"]}
+                  searchPlaceholder="Search today's classes..."
+                  columns={[
+                    { key: "courseName", label: "Subject" },
+                    { key: "markedBy", label: "Faculty" },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (item) => (
+                        <Badge variant="outline" className={cn("capitalize", statusStyles[item.status as keyof typeof statusStyles])}>
+                          {String(item.status)}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="overview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" /> Attendance Trend</CardTitle>
+              <CardDescription>Daily attendance percentage trend over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-muted-foreground">Loading trend...</p>
+              ) : trendData.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No attendance records available for trend.</p>
+              ) : (
+                <ChartContainer
+                  className="h-[260px] w-full"
+                  config={{ percentage: { label: "Attendance %", color: "hsl(var(--primary))" } }}
+                >
+                  <LineChart data={trendData}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={24} />
+                    <YAxis domain={[0, 100]} tickLine={false} axisLine={false} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Line type="monotone" dataKey="percentage" stroke="var(--color-percentage)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Subject-wise Breakdown</CardTitle>
+              <CardDescription>Present / Absent / Total classes for each subject</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                data={subjectStats}
+                searchKeys={["subject"]}
+                searchPlaceholder="Search by subject..."
+                columns={[
+                  { key: "subject", label: "Subject" },
+                  { key: "present", label: "Present" },
+                  { key: "absent", label: "Absent" },
+                  { key: "total", label: "Total" },
+                  {
+                    key: "needToReach75",
+                    label: "Need for 75%",
+                    render: (item) => (
+                      <span className={cn("font-medium", Number(item.needToReach75 || 0) > 0 ? "text-warning" : "text-success")}>
+                        {Number(item.needToReach75 || 0)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "percentage",
+                    label: "Attendance",
+                    render: (item) => {
+                      const value = Number(item.percentage || 0);
+                      const style = value >= 75 ? "bg-success/10 text-success border-success/30" : value >= 65 ? "bg-warning/10 text-warning border-warning/30" : "bg-destructive/10 text-destructive border-destructive/30";
+                      return (
+                        <div className="space-y-1.5 min-w-[140px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge variant="outline" className={cn(style)}>{value}%</Badge>
+                            <span className="text-xs text-muted-foreground">Can miss {Number(item.canMiss || 0)}</span>
+                          </div>
+                          <Progress value={value} className="h-1.5" />
+                        </div>
+                      );
+                    },
+                  },
+                ]}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="log" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Date-wise Attendance Log</CardTitle>
+              <CardDescription>Track each class day with subject and faculty details</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-muted-foreground">Loading attendance...</p>
+              ) : (
+                <DataTable
+                  data={filteredAttendance}
+                  searchKeys={["courseName", "markedBy", "semester"]}
+                  searchPlaceholder="Search by subject, faculty, or semester..."
+                  columns={[
+                    { key: "date", label: "Date" },
+                    { key: "courseName", label: "Subject" },
+                    { key: "semester", label: "Semester" },
+                    { key: "markedBy", label: "Faculty" },
+                    {
+                      key: "status",
+                      label: "Status",
+                      render: (item) => (
+                        <Badge variant="outline" className={cn("capitalize", statusStyles[item.status as keyof typeof statusStyles])}>
+                          {String(item.status)}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="requests" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Apply Leave / Request Correction</CardTitle>
+              <CardDescription>Submit requests for faculty/admin approval workflow</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Request Type</label>
+                  <Select value={requestType} onValueChange={(value) => setRequestType(value as RequestType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="leave">Leave</SelectItem>
+                      <SelectItem value="correction">Attendance Correction</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Subject</label>
+                  <Select value={requestSubject} onValueChange={setRequestSubject}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">General</SelectItem>
+                      {uniqueSubjects.map((subject) => <SelectItem key={subject} value={subject}>{subject}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Date</label>
+                  <Input type="date" value={requestDate} onChange={(e) => setRequestDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Reason</label>
+                <Textarea
+                  placeholder="Explain your leave/correction request..."
+                  value={requestReason}
+                  onChange={(e) => setRequestReason(e.target.value)}
+                />
+              </div>
+
+              <Button onClick={handleCreateRequest} disabled={submittingRequest || !hasRequestsTable}>
+                {submittingRequest ? "Submitting..." : "Submit Request"}
+              </Button>
+
+              {!hasRequestsTable && (
+                <p className="text-sm text-warning">Attendance request workflow table is not configured yet.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">My Request History</CardTitle>
+              <CardDescription>Track pending, approved, and rejected requests</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                data={requests}
+                searchKeys={["subject", "request_type", "reason", "status"]}
+                searchPlaceholder="Search request history..."
+                columns={[
+                  { key: "request_type", label: "Type", render: (item) => <span className="capitalize">{String(item.request_type)}</span> },
+                  { key: "subject", label: "Subject" },
+                  { key: "request_date", label: "Date" },
+                  { key: "reason", label: "Reason" },
+                  {
+                    key: "status",
+                    label: "Status",
+                    render: (item) => (
+                      <Badge variant="outline" className={cn("capitalize", requestStatusStyles[item.status as keyof typeof requestStatusStyles])}>
+                        {String(item.status)}
+                      </Badge>
+                    ),
+                  },
+                ]}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
