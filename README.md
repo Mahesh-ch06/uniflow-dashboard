@@ -1,60 +1,218 @@
 # UniFlow Dashboard
 
-### Demo Login Credentials
+An end-to-end university academic operations platform built as a course project, with dedicated portals for Students, Faculty, and Admin.
 
-> **Student Login**
-> - ID / Hall Ticket: `2303A52037`
-> - Password: `@Mahesh06`
-> 
-> **Faculty Login**
-> - ID: `F009`
-> - Password: `@Mahesh06`
-> 
-> **Admin Login**
-> - Email: `chitikeshimahesh6@gmail.com`
-> - Password: `@Mahesh06`
+## Demo Login Credentials
 
----
+### Student
+- Login ID / Hall Ticket: `2303A52037`
+- Password: `@Mahesh06`
 
-## 📖 About the Project 
+### Faculty
+- Login ID: `F009`
+- Password: `@Mahesh06`
 
-UniFlow Dashboard is a modern, comprehensive university management system designed to streamline and automate core academic operations. It bridges the communication gap between students, faculty, and administrators by providing secure, role-specific portals equipped with real-time data sync.
-
-### How It Works
-
-The platform operates through three distinct, customized workflows based on the user's role:
-
-#### 🎓 1. Student Portal
-- **Live Attendance Analytics:** Students can monitor their exact attendance percentage in real-time. The system calculates visual thresholds (Safe, Warning, Critical) based on a 75% required attendance policy.
-- **Smart Predictors:** The dashboard dynamically computes "classes needed for 75%" to recover from shortages, and "classes you can safely miss" before falling under the threshold.
-- **Leave & Correction Workflow:** Students can seamlessly submit leave applications or attendance correction requests right from the site. This triggers a workflow that alerts the respective faculty.
-- **Course Registration:** Dynamic handling of elective and mandatory course enrollments directly linked to the student's unique mapping details (UUID/Hall Ticket fallback tracking).
-- **Data Exports:** Generate and download official university reports directly into `.xlsx` (Excel), CSV, or PDF formats.
-- **Visuals:** Uses interactive graphs to showcase day-by-day and subject-by-subject attendance trends over time.
-
-#### 👨‍🏫 2. Faculty Portal
-- **Class & Attendance Management:** Faculty members get a robust interface summarizing their assigned subjects and allowing them to mark class attendance efficiently.
-- **Request Approvals:** A built-in triage center to review, approve, or reject student queries regarding leaves of absence and attendance corrections.
-
-#### ⚙️ 3. Admin Portal
-- **Global Overview:** Centralized control over the system.
-- **Curriculum & Data:** Define and open courses for enrollment, modify university hierarchies, and ensure database integrity.
+### Admin
+- Email: `chitikeshimahesh6@gmail.com`
+- Password: `@Mahesh06`
 
 ---
 
-## 🛠 Technical Architecture
+## Table of Contents
+- [Project Overview](#project-overview)
+- [Problem Statement](#problem-statement)
+- [Objectives](#objectives)
+- [Core Features](#core-features)
+- [Role-Based Workflows](#role-based-workflows)
+- [System Architecture](#system-architecture)
+- [Database Design (Supabase)](#database-design-supabase)
+- [Realtime & Business Logic](#realtime--business-logic)
+- [Project Structure](#project-structure)
+- [Technology Stack](#technology-stack)
+- [Setup and Run](#setup-and-run)
+- [Deployment](#deployment)
+- [Future Enhancements](#future-enhancements)
 
-- **Frontend:** Built with React, TypeScript, and Vite.
-- **UI & Styling:** Tailwind CSS coupled with shadcn/ui components for a premium, highly responsive mobile-first design.
-- **Data Visualization & Export:** `recharts` for performance trend graphs, `xlsx` library for spreadsheet generation.
-- **Backend & Database:** Powered by Supabase (PostgreSQL). Heavily utilizes:
-  - Row Level Security (RLS) policies for strict endpoint isolation.
-  - RPC Database Functions (e.g., automated increment course enrollment counts).
-  - Realtime Subscriptions (`postgres_changes`) to instantly update graphs when faculty mark attendance.
+---
 
-## 🚀 Getting Started
+## Project Overview
 
-1. Clone the repository
-2. Run `npm install` to install dependencies
-3. Configure your environment variables to link your local instance to your Supabase project
-4. Start the application with `npm run dev`
+UniFlow Dashboard is a centralized academic management application designed to digitize day-to-day university operations. It provides secure, role-aware dashboards where:
+- Students track attendance, request corrections, and manage course registrations.
+- Faculty manage attendance operations and review student requests.
+- Admins maintain institutional master data and monitor platform-level activity.
+
+The project focuses on practical campus needs: transparency, faster approvals, real-time visibility, and reducing manual paperwork.
+
+## Problem Statement
+
+Traditional campus workflows often depend on disconnected systems, manual records, and delayed updates. This creates common issues:
+- Students cannot quickly verify if attendance was marked correctly.
+- Faculty spends time managing repetitive manual updates.
+- Admin teams struggle with data consistency across modules.
+
+UniFlow solves this through a unified web platform backed by a real-time cloud database.
+
+## Objectives
+
+1. Build a responsive academic dashboard for three user roles.
+2. Provide real-time, date-wise attendance visibility.
+3. Implement attendance compliance analytics based on minimum required percentage.
+4. Enable request-based workflows (leave/correction) with tracking.
+5. Improve reliability for course registration and user identity mapping.
+
+## Core Features
+
+### 1) Authentication & Session Management
+- Role-based login for Student, Faculty, and Admin.
+- Session inactivity expiry support for improved security.
+- Persistent login state using browser storage.
+
+### 2) Advanced Attendance Module
+- Live attendance percentage and compliance status.
+- Date-wise attendance logs and filtering by semester/subject.
+- “Today” view to verify current-day attendance quickly.
+- Risk indicators:
+  - Classes needed to reach 75%.
+  - Number of classes that can be missed safely.
+- Attendance trend charts for performance tracking.
+
+### 3) Leave / Correction Request Pipeline
+- Students submit attendance-related requests with reason and date.
+- Faculty reviews pending requests and takes action.
+- Request history visible to students with status tracking.
+
+### 4) Course Registration Reliability
+- Handles schema differences and fallback identity mapping.
+- Supports elective/mandatory logic for enroll/drop workflows.
+
+### 5) Reporting & Export
+- Export attendance data as CSV, Excel, and print-friendly PDF.
+
+## Role-Based Workflows
+
+### Student Workflow
+1. Login using hall ticket and password.
+2. Open attendance dashboard.
+3. Check “Today” tab to verify latest class status.
+4. Review analytics and shortage alerts.
+5. Submit leave/correction request if needed.
+6. Track request approval status.
+
+### Faculty Workflow
+1. Login using faculty ID and password.
+2. Mark student attendance by class/date.
+3. Review and process pending student requests.
+4. Maintain course-level attendance integrity.
+
+### Admin Workflow
+1. Login with admin email and password.
+2. Manage master entities (students, courses, departments).
+3. Monitor system data consistency and operational readiness.
+
+## System Architecture
+
+The application follows a client-driven architecture with cloud-backed data services:
+
+- Frontend (React + TypeScript)
+  - Role-specific pages and dashboards.
+  - Reusable UI components for consistency.
+  - Data visualization and export features.
+
+- Backend as a Service (Supabase)
+  - PostgreSQL database.
+  - Realtime channels for instant updates.
+  - Access controls and policy-based data protection.
+
+## Database Design (Supabase)
+
+The platform uses academic-domain tables such as:
+- `students`, `faculty`, `admins`
+- `courses`, `student_courses`
+- `attendance`
+- `attendance_requests`
+
+Supporting SQL setup scripts are included in the repository for easier environment initialization.
+
+## Realtime & Business Logic
+
+- Attendance pages subscribe to `postgres_changes` to reflect updates without refresh.
+- Attendance metrics are calculated from present/absent/late records.
+- Compliance logic centers around a 75% attendance benchmark.
+- Defensive fallback handling is implemented to avoid failures from schema/key mismatches.
+
+## Project Structure
+
+Key directories:
+- `src/pages/student` – Student-facing dashboard modules
+- `src/pages/faculty` – Faculty attendance and request handling pages
+- `src/pages/admin` – Admin management pages
+- `src/components` – Shared UI and table components
+- `src/contexts` – Auth/session state management
+- SQL setup files in repository root – Supabase schema and workflow setup
+
+## Technology Stack
+
+- Frontend: React, TypeScript, Vite
+- Styling/UI: Tailwind CSS, shadcn/ui
+- Charts: Recharts
+- Data export: xlsx, CSV utilities, browser print
+- Backend: Supabase (PostgreSQL + Realtime)
+- Testing: Vitest (basic setup)
+- Deployment: Vercel
+
+## Setup and Run
+
+### Prerequisites
+- Node.js 18+
+- npm (or compatible package manager)
+- Supabase project with required schema/tables
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone <your-repo-url>
+   cd uniflow-dashboard
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Configure environment variables for Supabase (URL and key).
+4. Run SQL setup scripts in your Supabase SQL editor (as needed by modules).
+5. Start development server:
+   ```bash
+   npm run dev
+   ```
+
+### Build for Production
+```bash
+npm run build
+```
+
+## Deployment
+
+The project is deployment-ready for Vercel:
+- Ensure environment variables are set in deployment settings.
+- Trigger deploy from GitHub integration or CLI.
+
+## Future Enhancements
+
+- Notification center for request approvals/rejections.
+- Timetable-aware attendance reminders.
+- OTP/2FA for stronger authentication.
+- Analytics dashboard for institutional insights.
+- Audit logs for admin actions.
+
+---
+
+## Course Project Notes
+
+This project demonstrates practical application of:
+- Full-stack web engineering concepts
+- Role-based access and workflow design
+- Real-time systems using event-driven updates
+- Data modeling for academic operations
+- Production-style UI/UX and module architecture
+
+It is suitable for academic project evaluation, demos, and portfolio presentation.
