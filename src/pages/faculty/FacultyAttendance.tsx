@@ -199,33 +199,129 @@ export default function FacultyAttendance() {
         const electiveCourses = coursesRes.data.filter((c) => c.course_type === "elective");
         if (electiveCourses.length > 0) {
           const courseIds = electiveCourses.map((c) => c.id);
-          const { data: enrollments } = await supabase
+
+          let enrollmentRows: Array<{ student_id: string; course_id: string; status?: string }> = [];
+
+          const enrollmentsRes = await supabase
             .from("student_courses")
-            .select("student_id, course_id, students(name, batch_name, email, hall_ticket_no)")
+            .select("student_id, course_id, status")
             .in("course_id", courseIds);
 
-          if (enrollments && enrollments.length > 0) {
+          if (enrollmentsRes.error) {
+            const fallbackEnrollmentsRes = await supabase
+              .from("student_courses")
+              .select("student_id, course_id")
+              .in("course_id", courseIds);
+
+            if (!fallbackEnrollmentsRes.error) {
+              enrollmentRows = (fallbackEnrollmentsRes.data || []).map((row: any) => ({
+                student_id: row.student_id,
+                course_id: row.course_id,
+                status: "enrolled",
+              }));
+            }
+          } else {
+            enrollmentRows = (enrollmentsRes.data || []) as Array<{ student_id: string; course_id: string; status?: string }>;
+          }
+
+          const activeEnrollments = enrollmentRows.filter((row) => row.status !== "dropped");
+
+          if (activeEnrollments.length > 0) {
+            const normalizeStudentKey = (value: string | undefined | null) => String(value || "").trim().toLowerCase();
+
+            const studentKeys = Array.from(new Set(activeEnrollments.map((row) => row.student_id).filter(Boolean)));
+
+            const studentMapByHall = new Map<string, StudentData>();
+            const studentMapById = new Map<string, StudentData>();
+
+            fetchedStudents.forEach((student) => {
+              const normalized: StudentData = {
+                id: student.id,
+                name: student.name,
+                hall_ticket_no: student.hall_ticket_no,
+                batch_name: student.batch_name,
+                email: student.email,
+              };
+
+              if (normalized.hall_ticket_no) {
+                studentMapByHall.set(normalizeStudentKey(normalized.hall_ticket_no), normalized);
+              }
+              if (normalized.id) {
+                studentMapById.set(normalizeStudentKey(normalized.id), normalized);
+              }
+            });
+
+            const studentsByHallRes = await supabase
+              .from("students")
+              .select("id, name, hall_ticket_no, batch_name, email")
+              .in("hall_ticket_no", studentKeys);
+
+            (studentsByHallRes.data || []).forEach((student: any) => {
+              const normalized: StudentData = {
+                id: student.id,
+                name: student.name,
+                hall_ticket_no: student.hall_ticket_no,
+                batch_name: student.batch_name,
+                email: student.email,
+              };
+
+              if (normalized.hall_ticket_no) studentMapByHall.set(normalizeStudentKey(normalized.hall_ticket_no), normalized);
+              if (normalized.id) studentMapById.set(normalizeStudentKey(normalized.id), normalized);
+            });
+
+            const unresolvedKeys = studentKeys.filter((key) => {
+              const normalizedKey = normalizeStudentKey(key);
+              return !studentMapByHall.has(normalizedKey) && !studentMapById.has(normalizedKey);
+            });
+
+            if (unresolvedKeys.length > 0) {
+              const studentsByIdRes = await supabase
+                .from("students")
+                .select("id, name, hall_ticket_no, batch_name, email")
+                .in("id", unresolvedKeys);
+
+              (studentsByIdRes.data || []).forEach((student: any) => {
+                const normalized: StudentData = {
+                  id: student.id,
+                  name: student.name,
+                  hall_ticket_no: student.hall_ticket_no,
+                  batch_name: student.batch_name,
+                  email: student.email,
+                };
+
+                if (normalized.hall_ticket_no) studentMapByHall.set(normalizeStudentKey(normalized.hall_ticket_no), normalized);
+                if (normalized.id) studentMapById.set(normalizeStudentKey(normalized.id), normalized);
+              });
+            }
+
+            const resolveStudent = (studentKey: string) => {
+              const normalizedKey = normalizeStudentKey(studentKey);
+              return studentMapByHall.get(normalizedKey) || studentMapById.get(normalizedKey);
+            };
+
             for (const course of electiveCourses) {
-              const courseEnrollments = enrollments.filter((e) => e.course_id === course.id);
+              const courseEnrollments = activeEnrollments.filter((row) => row.course_id === course.id);
               if (courseEnrollments.length === 0) continue;
 
               const batches = new Set(
                 courseEnrollments
-                  .map((e) => (e.students as any)?.batch_name)
-                  .filter(Boolean)
+                  .map((row) => resolveStudent(row.student_id)?.batch_name)
+                  .filter(Boolean) as string[],
               );
-              
-              const combinedBatchName = `${course.name}(${Array.from(batches).join(", ")})`;
-              
-              courseEnrollments.forEach((e) => {
-                const joinedStudent = e.students as any;
-                const resolvedHallTicket = joinedStudent?.hall_ticket_no || e.student_id;
+
+              const combinedBatchName = batches.size > 0
+                ? `${course.name}(${Array.from(batches).join(", ")})`
+                : `${course.name}(Elective)`;
+
+              courseEnrollments.forEach((row) => {
+                const resolvedStudent = resolveStudent(row.student_id);
+                const resolvedHallTicket = (resolvedStudent?.hall_ticket_no || row.student_id || "").trim();
                 allLoadedStudents.push({
-                  id: `${e.student_id}_${course.id}`,
+                  id: `${resolvedHallTicket}_${course.id}`,
                   hall_ticket_no: resolvedHallTicket,
-                  name: joinedStudent?.name || "Unknown",
+                  name: resolvedStudent?.name || "Unknown",
                   batch_name: combinedBatchName,
-                  email: joinedStudent?.email || undefined,
+                  email: resolvedStudent?.email || undefined,
                 });
               });
             }
@@ -479,36 +575,103 @@ export default function FacultyAttendance() {
       );
 
       if (absentStudents.length > 0) {
-        const absentIds = absentStudents.map((student) => student.hall_ticket_no);
+        const normalizeKey = (value: string | undefined | null) => String(value || "").trim().toLowerCase();
+        const absentHallTickets = absentStudents.map((student) => student.hall_ticket_no).filter(Boolean);
 
+        const { data: studentIdentityRows } = await supabase
+          .from("students")
+          .select("id, hall_ticket_no, email, name")
+          .in("hall_ticket_no", absentHallTickets);
+
+        const studentInfoByHall = new Map<string, { hall_ticket_no: string; email?: string | null; name?: string | null }>();
+        const attendanceKeyToHall = new Map<string, string>();
+
+        absentHallTickets.forEach((hallTicket) => {
+          attendanceKeyToHall.set(normalizeKey(hallTicket), hallTicket);
+        });
+
+        (studentIdentityRows || []).forEach((row: { id?: string | null; hall_ticket_no: string; email?: string | null; name?: string | null }) => {
+          if (!row?.hall_ticket_no) return;
+          const normalizedHall = normalizeKey(row.hall_ticket_no);
+          studentInfoByHall.set(normalizedHall, {
+            hall_ticket_no: row.hall_ticket_no,
+            email: row.email,
+            name: row.name,
+          });
+          attendanceKeyToHall.set(normalizedHall, row.hall_ticket_no);
+          if (row.id) {
+            attendanceKeyToHall.set(normalizeKey(row.id), row.hall_ticket_no);
+          }
+        });
+
+        const attendanceQueryKeysRaw = new Set<string>();
+        absentHallTickets.forEach((hallTicket) => {
+          attendanceQueryKeysRaw.add(String(hallTicket).trim());
+        });
+
+        (studentIdentityRows || []).forEach((row: { id?: string | null; hall_ticket_no: string }) => {
+          if (row?.hall_ticket_no) {
+            attendanceQueryKeysRaw.add(String(row.hall_ticket_no).trim());
+          }
+          if (row?.id) {
+            attendanceQueryKeysRaw.add(String(row.id).trim());
+          }
+        });
+
+        const attendanceQueryKeys = Array.from(attendanceQueryKeysRaw);
         const { data: attendanceHistory } = await supabase
           .from("attendance")
-          .select("student_id, status")
-          .eq("course_name", selectedCourse)
-          .in("student_id", absentIds);
+          .select("student_id, status, course_name")
+          .in("student_id", attendanceQueryKeys);
 
-        const attendanceByStudent = new Map<string, { present: number; total: number }>();
+        const overallAttendanceByHallTicket = new Map<string, { present: number; total: number }>();
+        const courseAttendanceByHallTicket = new Map<string, { present: number; total: number }>();
 
-        (attendanceHistory || []).forEach((entry: { student_id: string; status: AttendanceStatus }) => {
-          const current = attendanceByStudent.get(entry.student_id) || { present: 0, total: 0 };
-          attendanceByStudent.set(entry.student_id, {
-            present: current.present + (entry.status === "present" || entry.status === "late" ? 1 : 0),
-            total: current.total + 1,
+        (attendanceHistory || []).forEach((entry: { student_id: string; status: AttendanceStatus; course_name: string }) => {
+          const hallTicket = attendanceKeyToHall.get(normalizeKey(entry.student_id));
+          if (!hallTicket) return;
+          const normalizedHall = normalizeKey(hallTicket);
+
+          const overallCurrent = overallAttendanceByHallTicket.get(normalizedHall) || { present: 0, total: 0 };
+          overallAttendanceByHallTicket.set(normalizedHall, {
+            present: overallCurrent.present + (entry.status === "present" || entry.status === "late" ? 1 : 0),
+            total: overallCurrent.total + 1,
           });
+
+          if (entry.course_name === selectedCourse) {
+            const courseCurrent = courseAttendanceByHallTicket.get(normalizedHall) || { present: 0, total: 0 };
+            courseAttendanceByHallTicket.set(normalizedHall, {
+              present: courseCurrent.present + (entry.status === "present" || entry.status === "late" ? 1 : 0),
+              total: courseCurrent.total + 1,
+            });
+          }
         });
 
         const absentMailResults = await Promise.all(
           absentStudents.map(async (student) => {
-            const stats = attendanceByStudent.get(student.hall_ticket_no) || { present: 0, total: 0 };
-            const currentAttendance = stats.total > 0
-              ? `${Math.round((stats.present / stats.total) * 100)}%`
+            const hallTicketKey = normalizeKey(student.hall_ticket_no);
+            const overallStats = overallAttendanceByHallTicket.get(hallTicketKey) || { present: 0, total: 0 };
+            const courseStats = courseAttendanceByHallTicket.get(hallTicketKey) || { present: 0, total: 0 };
+
+            const overallAttendance = overallStats.total > 0
+              ? `${Math.round((overallStats.present / overallStats.total) * 100)}%`
               : "N/A";
 
-            const targetEmail = (student.email || `${student.hall_ticket_no}@student.edu`).trim();
+            const courseAttendance = courseStats.total > 0
+              ? `${Math.round((courseStats.present / courseStats.total) * 100)}%`
+              : "N/A";
+
+            const currentAttendance = `${overallAttendance} (Overall) | ${courseAttendance} (${selectedCourse})`;
+
+            const studentInfo = studentInfoByHall.get(hallTicketKey);
+            const dbEmail = student.email || studentInfo?.email || "";
+            const fallbackEmail = `${student.hall_ticket_no}@sru.edu.in`;
+            const targetEmail = (dbEmail || fallbackEmail).trim();
+            const resolvedName = student.name === "Unknown" ? (studentInfo?.name || student.name) : student.name;
 
             return sendStudentAbsentAlertEmail({
               toEmail: targetEmail,
-              studentName: student.name,
+              studentName: resolvedName,
               hallTicket: student.hall_ticket_no,
               courseName: selectedCourse,
               batchName: selectedBatch,
