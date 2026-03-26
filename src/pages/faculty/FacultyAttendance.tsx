@@ -28,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { isEmailJsConfigured, sendStudentAbsentAlertEmail } from "@/lib/email";
 
 type AttendanceStatus = "present" | "absent" | "late";
 
@@ -36,6 +37,7 @@ interface StudentData {
   name: string;
   hall_ticket_no: string;
   batch_name: string;
+  email?: string;
 }
 
 interface AttendanceRow {
@@ -157,17 +159,27 @@ export default function FacultyAttendance() {
       const assignedBatches = facultyProfile?.assigned_batches || [];
       
       const [studentsRes, facultyRes, coursesRes] = await Promise.all([
-        supabase.from("students").select("id, name, hall_ticket_no, batch_name"),
+        supabase.from("students").select("id, name, hall_ticket_no, batch_name, email"),
         supabase.from("faculty").select("staff_id, name"),
         user?.id ? supabase.from("courses").select("id, name, code, course_type").eq("faculty_id", user.id) : Promise.resolve({ data: null, error: null })
       ]);
 
       let allLoadedStudents: StudentData[] = [];
-      if (!studentsRes.error) {
+      let fetchedStudents: StudentData[] = [];
+
+      if (studentsRes.error) {
+        const fallbackStudentsRes = await supabase.from("students").select("id, name, hall_ticket_no, batch_name");
+        if (!fallbackStudentsRes.error) {
+          fetchedStudents = (fallbackStudentsRes.data || []) as StudentData[];
+        }
+      } else {
+        fetchedStudents = (studentsRes.data || []) as StudentData[];
+      }
+
+      if (fetchedStudents.length > 0) {
         // Only load students that belong to the assigned batches
-        const allFetchedStudents = (studentsRes.data || []) as StudentData[];
         if (assignedBatches.length > 0) {
-          allLoadedStudents = allFetchedStudents.filter(s => assignedBatches.includes(s.batch_name));
+          allLoadedStudents = fetchedStudents.filter(s => assignedBatches.includes(s.batch_name));
         } else {
           // If no batches assigned, they see nothing (or you could default to all for backward compatibility, but admin assignment implies restriction)
           allLoadedStudents = [];
@@ -189,7 +201,7 @@ export default function FacultyAttendance() {
           const courseIds = electiveCourses.map((c) => c.id);
           const { data: enrollments } = await supabase
             .from("student_courses")
-            .select("student_id, course_id, students(name, batch_name)")
+            .select("student_id, course_id, students(name, batch_name, email, hall_ticket_no)")
             .in("course_id", courseIds);
 
           if (enrollments && enrollments.length > 0) {
@@ -206,11 +218,14 @@ export default function FacultyAttendance() {
               const combinedBatchName = `${course.name}(${Array.from(batches).join(", ")})`;
               
               courseEnrollments.forEach((e) => {
+                const joinedStudent = e.students as any;
+                const resolvedHallTicket = joinedStudent?.hall_ticket_no || e.student_id;
                 allLoadedStudents.push({
                   id: `${e.student_id}_${course.id}`,
-                  hall_ticket_no: e.student_id,
-                  name: (e.students as any)?.name || "Unknown",
+                  hall_ticket_no: resolvedHallTicket,
+                  name: joinedStudent?.name || "Unknown",
                   batch_name: combinedBatchName,
+                  email: joinedStudent?.email || undefined,
                 });
               });
             }
@@ -458,6 +473,63 @@ export default function FacultyAttendance() {
         .upsert(records, { onConflict: "student_id, date, course_name" });
 
       if (error) throw error;
+
+      const absentStudents = batchStudents.filter(
+        (student) => (attendance[student.hall_ticket_no] || "present") === "absent",
+      );
+
+      if (absentStudents.length > 0) {
+        const absentIds = absentStudents.map((student) => student.hall_ticket_no);
+
+        const { data: attendanceHistory } = await supabase
+          .from("attendance")
+          .select("student_id, status")
+          .eq("course_name", selectedCourse)
+          .in("student_id", absentIds);
+
+        const attendanceByStudent = new Map<string, { present: number; total: number }>();
+
+        (attendanceHistory || []).forEach((entry: { student_id: string; status: AttendanceStatus }) => {
+          const current = attendanceByStudent.get(entry.student_id) || { present: 0, total: 0 };
+          attendanceByStudent.set(entry.student_id, {
+            present: current.present + (entry.status === "present" || entry.status === "late" ? 1 : 0),
+            total: current.total + 1,
+          });
+        });
+
+        const absentMailResults = await Promise.all(
+          absentStudents.map(async (student) => {
+            const stats = attendanceByStudent.get(student.hall_ticket_no) || { present: 0, total: 0 };
+            const currentAttendance = stats.total > 0
+              ? `${Math.round((stats.present / stats.total) * 100)}%`
+              : "N/A";
+
+            const targetEmail = (student.email || `${student.hall_ticket_no}@student.edu`).trim();
+
+            return sendStudentAbsentAlertEmail({
+              toEmail: targetEmail,
+              studentName: student.name,
+              hallTicket: student.hall_ticket_no,
+              courseName: selectedCourse,
+              batchName: selectedBatch,
+              attendanceDate: selectedDate,
+              currentAttendance,
+              facultyName: user?.name || user?.id || "Faculty",
+            });
+          }),
+        );
+
+        const sentCount = absentMailResults.filter((result) => result.ok).length;
+        const failedCount = absentMailResults.length - sentCount;
+
+        toast({
+          title: "Absent alerts processed",
+          description: isEmailJsConfigured
+            ? `${sentCount} email(s) sent${failedCount > 0 ? `, ${failedCount} failed` : ""}.`
+            : "Attendance saved, but EmailJS is not configured. Set EmailJS env values to enable absent alerts.",
+          variant: isEmailJsConfigured && failedCount > 0 ? "destructive" : "default",
+        });
+      }
 
       setSessionMarkedBy(marker);
       toast({ title: "Success", description: "Attendance saved successfully." });

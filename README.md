@@ -178,12 +178,28 @@ Key directories:
    ```bash
    npm install
    ```
-3. Configure environment variables for Supabase (URL and key).
-4. Run SQL setup scripts in your Supabase SQL editor (as needed by modules).
-5. Start development server:
+3. Configure environment variables in `.env` (you can copy from `.env.example`):
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+  - `VITE_EMAILJS_SERVICE_ID`
+  - `VITE_EMAILJS_PUBLIC_KEY`
+  - `VITE_EMAILJS_TEMPLATE_FACULTY_WELCOME`
+  - `VITE_EMAILJS_TEMPLATE_STUDENT_ABSENT`
+4. Create EmailJS templates using `EMAILJS_TEMPLATES.md`.
+5. Run SQL setup scripts in your Supabase SQL editor (as needed by modules).
+6. Start development server:
    ```bash
    npm run dev
    ```
+
+### Email Notifications (EmailJS)
+
+Integrated notification flows:
+- Admin creating a faculty account sends a welcome email with faculty ID and temporary password.
+- Faculty marking absent students sends attendance alert emails including class name, date, and current attendance.
+
+Template reference:
+- `EMAILJS_TEMPLATES.md`
 
 ### Build for Production
 ```bash

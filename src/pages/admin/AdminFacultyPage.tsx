@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { isEmailJsConfigured, sendFacultyWelcomeEmail } from '@/lib/email';
 
 export default function AdminFaculty() {
   const [faculty, setFaculty] = useState<any[]>([]);
@@ -16,7 +17,15 @@ export default function AdminFaculty() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ staff_id: '', name: '', email: '', department: '', phone: '', password: '' });
+  const [formData, setFormData] = useState({
+    staff_id: '',
+    name: '',
+    email: '',
+    welcome_email: '',
+    department: '',
+    phone: '',
+    password: '',
+  });
   const [allBatches, setAllBatches] = useState<string[]>([]);
   const [selectedBatches, setSelectedBatches] = useState<string[]>([]);
   const [activeFacultyForBatches, setActiveFacultyForBatches] = useState<any>(null);
@@ -53,13 +62,22 @@ export default function AdminFaculty() {
         staff_id: item.staff_id || '',
         name: item.name || '',
         email: item.email || '',
+        welcome_email: item.email || '',
         department: item.department || '',
         phone: item.phone || '',
         password: item.password || 'UniManage@2026'
       });
     } else {
       setEditingId(null);
-      setFormData({ staff_id: '', name: '', email: '', department: '', phone: '', password: 'UniManage@2026' });
+      setFormData({
+        staff_id: '',
+        name: '',
+        email: '',
+        welcome_email: '',
+        department: '',
+        phone: '',
+        password: 'UniManage@2026',
+      });
     }
     setDialogOpen(true);
   };
@@ -69,16 +87,47 @@ export default function AdminFaculty() {
       toast({ title: 'Missing fields', description: 'Name, Email, and Staff ID are required', variant: 'destructive' });
       return;
     }
+
+    if (!editingId && !formData.welcome_email) {
+      toast({ title: 'Missing fields', description: 'Welcome Email is required for new faculty creation', variant: 'destructive' });
+      return;
+    }
+
+    const dbPayload = {
+      staff_id: formData.staff_id,
+      name: formData.name,
+      email: formData.email,
+      department: formData.department,
+      phone: formData.phone,
+      password: formData.password,
+    };
     
     try {
       if (editingId) {
-        const { error } = await supabase.from('faculty').update(formData).eq('id', editingId);
+        const { error } = await supabase.from('faculty').update(dbPayload).eq('id', editingId);
         if (error) throw error;
         toast({ title: 'Success', description: 'Faculty updated successfully' });
       } else {
-        const { error } = await supabase.from('faculty').insert([formData]);
+        const { error } = await supabase.from('faculty').insert([dbPayload]);
         if (error) throw error;
-        toast({ title: 'Success', description: 'Faculty added successfully' });
+
+        const emailResult = await sendFacultyWelcomeEmail({
+          toEmail: formData.welcome_email,
+          facultyName: formData.name,
+          facultyId: formData.staff_id,
+          password: formData.password,
+          department: formData.department,
+        });
+
+        if (emailResult.ok) {
+          toast({ title: 'Success', description: 'Faculty added and welcome email sent successfully' });
+        } else {
+          toast({
+            title: 'Faculty created, email not sent',
+            description: isEmailJsConfigured ? (emailResult.error || 'Failed to send welcome email') : 'Configure EmailJS environment variables to enable welcome emails.',
+            variant: 'destructive',
+          });
+        }
       }
       setDialogOpen(false);
       fetchFaculty();
@@ -220,6 +269,18 @@ export default function AdminFaculty() {
                 placeholder="faculty@university.edu"
               />
             </div>
+            {!editingId && (
+              <div className="grid gap-2">
+                <Label>Welcome Email</Label>
+                <Input
+                  type="email"
+                  value={formData.welcome_email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, welcome_email: e.target.value }))}
+                  placeholder="email used for credentials delivery"
+                />
+                <p className="text-xs text-muted-foreground">Faculty ID and password will be sent to this email after account creation.</p>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label>Department</Label>
               <Input
