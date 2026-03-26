@@ -197,9 +197,11 @@ Key directories:
 Integrated notification flows:
 - Admin creating a faculty account sends a welcome email with faculty ID and temporary password.
 - Faculty marking absent students sends attendance alert emails including class name, date, and current attendance.
+- Admin realtime in-app notifications support all students, selected students, all faculty, and selected faculty.
 
 Template reference:
 - `EMAILJS_TEMPLATES.md`
+- Realtime notifications SQL setup: `supabase-setup-notifications.sql`
 
 ### Build for Production
 ```bash

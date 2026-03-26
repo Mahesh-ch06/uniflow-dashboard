@@ -27,6 +27,7 @@ import FacultyAttendance from "@/pages/faculty/FacultyAttendance";
 import FacultyAttendanceEdit from "@/pages/faculty/FacultyAttendanceEdit";
 import FacultyMarks from "@/pages/faculty/FacultyMarks";
 import FacultyStudents from "@/pages/faculty/FacultyStudents";
+import FacultyNotifications from "@/pages/faculty/FacultyNotifications";
 
 // Student pages
 import StudentDashboard from "@/pages/student/StudentDashboard";
@@ -101,6 +102,7 @@ const App = () => (
             <Route path="/faculty/attendance/edit" element={<ProtectedRoute allowedRole="faculty"><FacultyAttendanceEdit /></ProtectedRoute>} />
             <Route path="/faculty/marks" element={<ProtectedRoute allowedRole="faculty"><FacultyMarks /></ProtectedRoute>} />
             <Route path="/faculty/students" element={<ProtectedRoute allowedRole="faculty"><FacultyStudents /></ProtectedRoute>} />
+            <Route path="/faculty/notifications" element={<ProtectedRoute allowedRole="faculty"><FacultyNotifications /></ProtectedRoute>} />
             <Route path="/faculty/profile" element={<ProtectedRoute allowedRole="faculty"><ProfilePage /></ProtectedRoute>} />
 
             {/* Student routes */}

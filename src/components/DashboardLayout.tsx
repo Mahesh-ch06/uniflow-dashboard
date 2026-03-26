@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -12,6 +12,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
+import {
+  mergeNotificationState,
+  NotificationRow,
+  NotificationUserStateRow,
+  isNotificationForUser,
+  isNotificationStatesTableMissing,
+  isNotificationsTableMissing,
+} from "@/lib/notifications";
 
 interface SubNavItem {
   label: string;
@@ -51,6 +61,7 @@ const facultyNav: NavItem[] = [
   },
   { label: "Marks", icon: FileText, path: "/faculty/marks" },
   { label: "Students", icon: Users, path: "/faculty/students" },
+  { label: "Notifications", icon: Bell, path: "/faculty/notifications" },
   { label: "Profile", icon: UserCircle, path: "/faculty/profile" },
 ];
 
@@ -92,10 +103,12 @@ const roleConfig = {
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   if (!user) return null;
 
@@ -112,6 +125,79 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   const visibleNav = config.nav.filter(item => !item.minYear || yearOfStudy >= item.minYear);
+
+  const refreshNotificationCount = async () => {
+    if (!user?.id) return;
+
+    const [{ data: notificationsData, error: notificationsError }, { data: statesData, error: statesError }] = await Promise.all([
+      supabase
+        .from("notifications")
+        .select("id, title, message, type, target_role, target_scope, recipient_ids, created_by, created_by_name, created_by_role, created_at")
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .from("notification_user_states")
+        .select("id, notification_id, user_role, user_id, is_read, is_opened, is_important, is_pinned, opened_at, read_at, updated_at")
+        .eq("user_role", user.role)
+        .eq("user_id", user.id)
+        .limit(500),
+    ]);
+
+    if (notificationsError) {
+      if (isNotificationsTableMissing(notificationsError.code)) {
+        setNotificationCount(0);
+      }
+      return;
+    }
+
+    const notifications = (notificationsData || []) as NotificationRow[];
+    const targeted = notifications
+      .filter((item) => isNotificationForUser(item, user.role, user.id));
+
+    if (statesError) {
+      if (isNotificationStatesTableMissing(statesError.code)) {
+        setNotificationCount(targeted.length);
+      }
+      return;
+    }
+
+    const states = (statesData || []) as NotificationUserStateRow[];
+    const merged = mergeNotificationState(targeted, states, user.role, user.id);
+    const unreadCount = merged.filter((item) => !item.is_read).length;
+
+    setNotificationCount(unreadCount);
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    refreshNotificationCount();
+
+    const channel = supabase
+      .channel(`live-notification-toast-${user.role}-${user.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload) => {
+        const newNotification = payload.new as NotificationRow;
+        if (!newNotification?.id) return;
+        if (!isNotificationForUser(newNotification, user.role, user.id)) return;
+
+        refreshNotificationCount();
+        toast({ title: newNotification.title, description: newNotification.message });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications" }, () => {
+        refreshNotificationCount();
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" }, () => {
+        refreshNotificationCount();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "notification_user_states" }, () => {
+        refreshNotificationCount();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, user?.role]);
 
   const handleLogout = () => {
     logout();
@@ -277,7 +363,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <ThemeToggle />
             <Button variant="ghost" size="icon" className="relative" onClick={() => navigate(`/${user.role}/notifications`)}>
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-destructive" />
+              {notificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground flex items-center justify-center">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </span>
+              )}
             </Button>
             <Badge variant="outline" className="hidden sm:inline-flex capitalize font-display">
               {user.role}

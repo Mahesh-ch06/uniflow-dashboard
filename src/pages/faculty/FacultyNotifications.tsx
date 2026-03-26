@@ -24,7 +24,7 @@ const typeConfig = {
   urgent: { icon: Bell, color: "text-destructive", bg: "bg-destructive/10" },
 };
 
-export default function StudentNotifications() {
+export default function FacultyNotifications() {
   const { user } = useAuth();
   const [allNotifications, setAllNotifications] = useState<NotificationRow[]>([]);
   const [notificationStates, setNotificationStates] = useState<NotificationUserStateRow[]>([]);
@@ -35,7 +35,7 @@ export default function StudentNotifications() {
 
   const myNotifications = useMemo<NotificationViewRow[]>(() => {
     if (!user?.id) return [];
-    return mergeNotificationState(allNotifications, notificationStates, "student", user.id);
+    return mergeNotificationState(allNotifications, notificationStates, "faculty", user.id);
   }, [allNotifications, notificationStates, user?.id]);
 
   const fetchNotifications = async () => {
@@ -50,7 +50,7 @@ export default function StudentNotifications() {
       supabase
         .from("notification_user_states")
         .select("id, notification_id, user_role, user_id, is_read, is_opened, is_important, is_pinned, opened_at, read_at, updated_at")
-        .eq("user_role", "student")
+        .eq("user_role", "faculty")
         .eq("user_id", user.id)
         .limit(500),
     ]);
@@ -87,7 +87,7 @@ export default function StudentNotifications() {
     if (!user?.id) return;
 
     const existing = notificationStates.find((item) => item.notification_id === notificationId);
-    const base = existing || defaultNotificationState(notificationId, "student", user.id);
+    const base = existing || defaultNotificationState(notificationId, "faculty", user.id);
     const now = new Date().toISOString();
 
     const payload: Omit<NotificationUserStateRow, "id"> = {
@@ -157,11 +157,11 @@ export default function StudentNotifications() {
     fetchNotifications();
 
     const channel = supabase
-      .channel(`student-notifications-${user?.id || "unknown"}`)
+      .channel(`faculty-notifications-${user?.id || "unknown"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => fetchNotifications())
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "notification_user_states", filter: `user_role=eq.student` },
+        { event: "*", schema: "public", table: "notification_user_states", filter: `user_role=eq.faculty` },
         () => fetchNotifications(),
       )
       .subscribe();
@@ -175,7 +175,7 @@ export default function StudentNotifications() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-display font-bold text-foreground">Notifications</h1>
-        <p className="text-muted-foreground">Stay updated with university announcements</p>
+        <p className="text-muted-foreground">Realtime updates and announcements for faculty</p>
       </div>
 
       {!tableReady && (
@@ -206,77 +206,77 @@ export default function StudentNotifications() {
           No notifications available.
         </div>
       ) : (
-      <div className="space-y-3">
-        {myNotifications.map((n) => {
-          const config = typeConfig[n.type] || typeConfig.info;
-          const Icon = config.icon;
-          const isBusy = Boolean(updatingState[n.id]);
+        <div className="space-y-3">
+          {myNotifications.map((n) => {
+            const config = typeConfig[n.type] || typeConfig.info;
+            const Icon = config.icon;
+            const isBusy = Boolean(updatingState[n.id]);
 
-          return (
-            <div key={n.id} className={cn("bg-card rounded-xl p-4 border shadow-card flex items-start gap-4 border-l-4", n.is_read ? "border-l-muted" : "border-l-primary") }>
-              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", config.bg)}>
-                <Icon className={cn("w-5 h-5", config.color)} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-foreground">{n.title}</h3>
-                  {!n.is_read && <Badge className="text-[10px]">Unread</Badge>}
-                  {n.is_opened && <Badge variant="secondary" className="text-[10px]">Opened</Badge>}
-                  {n.is_important && <Badge variant="destructive" className="text-[10px]">Important</Badge>}
-                  {n.is_pinned && <Badge variant="outline" className="text-[10px]">Pinned</Badge>}
-                  <Badge variant="outline" className="capitalize text-xs">{notificationTargetLabel(n.target_role, n.target_scope)}</Badge>
+            return (
+              <div key={n.id} className={cn("bg-card rounded-xl p-4 border shadow-card flex items-start gap-4 border-l-4", n.is_read ? "border-l-muted" : "border-l-primary")}> 
+                <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", config.bg)}>
+                  <Icon className={cn("w-5 h-5", config.color)} />
                 </div>
-                <p className="text-sm text-muted-foreground">{n.message}</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  {formatNotificationDateTime(n.created_at)}
-                  {n.created_by_name ? ` • By ${n.created_by_name}` : ""}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isBusy || n.is_opened}
-                    onClick={() => updateNotificationState(n.id, { is_opened: true, is_read: true })}
-                  >
-                    <MailOpen className="w-4 h-4 mr-2" />
-                    {n.is_opened ? "Opened" : "Open"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={n.is_read ? "secondary" : "default"}
-                    disabled={isBusy}
-                    onClick={() => updateNotificationState(n.id, { is_read: !n.is_read })}
-                  >
-                    {n.is_read ? "Mark Unread" : "Mark Read"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={n.is_important ? "destructive" : "outline"}
-                    disabled={isBusy}
-                    onClick={() => updateNotificationState(n.id, { is_important: !n.is_important })}
-                  >
-                    <Star className="w-4 h-4 mr-2" />
-                    {n.is_important ? "Unmark Important" : "Mark Important"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={n.is_pinned ? "secondary" : "outline"}
-                    disabled={isBusy}
-                    onClick={() => updateNotificationState(n.id, { is_pinned: !n.is_pinned })}
-                  >
-                    <Pin className="w-4 h-4 mr-2" />
-                    {n.is_pinned ? "Unpin" : "Pin"}
-                  </Button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <h3 className="font-semibold text-foreground">{n.title}</h3>
+                    {!n.is_read && <Badge className="text-[10px]">Unread</Badge>}
+                    {n.is_opened && <Badge variant="secondary" className="text-[10px]">Opened</Badge>}
+                    {n.is_important && <Badge variant="destructive" className="text-[10px]">Important</Badge>}
+                    {n.is_pinned && <Badge variant="outline" className="text-[10px]">Pinned</Badge>}
+                    <Badge variant="outline" className="capitalize text-xs">{notificationTargetLabel(n.target_role, n.target_scope)}</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{n.message}</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">
+                    {formatNotificationDateTime(n.created_at)}
+                    {n.created_by_name ? ` • By ${n.created_by_name}` : ""}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isBusy || n.is_opened}
+                      onClick={() => updateNotificationState(n.id, { is_opened: true, is_read: true })}
+                    >
+                      <MailOpen className="w-4 h-4 mr-2" />
+                      {n.is_opened ? "Opened" : "Open"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={n.is_read ? "secondary" : "default"}
+                      disabled={isBusy}
+                      onClick={() => updateNotificationState(n.id, { is_read: !n.is_read })}
+                    >
+                      {n.is_read ? "Mark Unread" : "Mark Read"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={n.is_important ? "destructive" : "outline"}
+                      disabled={isBusy}
+                      onClick={() => updateNotificationState(n.id, { is_important: !n.is_important })}
+                    >
+                      <Star className="w-4 h-4 mr-2" />
+                      {n.is_important ? "Unmark Important" : "Mark Important"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={n.is_pinned ? "secondary" : "outline"}
+                      disabled={isBusy}
+                      onClick={() => updateNotificationState(n.id, { is_pinned: !n.is_pinned })}
+                    >
+                      <Pin className="w-4 h-4 mr-2" />
+                      {n.is_pinned ? "Unpin" : "Pin"}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
