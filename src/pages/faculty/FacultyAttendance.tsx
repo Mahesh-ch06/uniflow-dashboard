@@ -80,6 +80,27 @@ export default function FacultyAttendance() {
     return Array.from(batches).filter(Boolean).sort();
   }, [allStudents]);
 
+  const inferredCourseFromBatch = useMemo(() => {
+    if (!selectedBatch || courseOptions.length === 0) return "";
+
+    const normalizedBatch = selectedBatch.trim();
+    const prefixBeforeParen = normalizedBatch.includes("(")
+      ? normalizedBatch.split("(")[0].trim()
+      : normalizedBatch;
+
+    const directMatch = courseOptions.find(
+      (course) => course.toLowerCase() === prefixBeforeParen.toLowerCase(),
+    );
+
+    if (directMatch) return directMatch;
+
+    const containsMatch = courseOptions.find((course) =>
+      normalizedBatch.toLowerCase().includes(course.toLowerCase()),
+    );
+
+    return containsMatch || "";
+  }, [selectedBatch, courseOptions]);
+
   const batchStudents = useMemo(() => {
     if (!selectedBatch) return [];
     return allStudents.filter((student) => student.batch_name === selectedBatch);
@@ -335,6 +356,13 @@ export default function FacultyAttendance() {
       supabase.removeChannel(channel);
     };
   }, [selectedBatch, selectedCourse, selectedDate, batchStudents.length]);
+
+  useEffect(() => {
+    if (!selectedBatch) return;
+    if (!inferredCourseFromBatch) return;
+    if (selectedCourse === inferredCourseFromBatch) return;
+    setSelectedCourse(inferredCourseFromBatch);
+  }, [selectedBatch, inferredCourseFromBatch, selectedCourse]);
 
   const handleRequestDecision = async (requestId: string, status: "approved" | "rejected") => {
     setProcessingRequestId(requestId);
