@@ -61,6 +61,7 @@ const facultyNav: NavItem[] = [
   },
   { label: "Marks", icon: FileText, path: "/faculty/marks" },
   { label: "Students", icon: Users, path: "/faculty/students" },
+  { label: "Timetable", icon: Calendar, path: "/faculty/timetable" },
   { label: "Notifications", icon: Bell, path: "/faculty/notifications" },
   { label: "Profile", icon: UserCircle, path: "/faculty/profile" },
 ];

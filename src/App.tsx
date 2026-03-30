@@ -28,6 +28,7 @@ import FacultyAttendanceEdit from "@/pages/faculty/FacultyAttendanceEdit";
 import FacultyMarks from "@/pages/faculty/FacultyMarks";
 import FacultyStudents from "@/pages/faculty/FacultyStudents";
 import FacultyNotifications from "@/pages/faculty/FacultyNotifications";
+import FacultyTimetable from "./pages/faculty/FacultyTimetable";
 
 // Student pages
 import StudentDashboard from "@/pages/student/StudentDashboard";
@@ -40,7 +41,7 @@ import StudentCourses from "./pages/student/StudentCourses";
 import StudentTimetable from "@/pages/student/StudentTimetable";
 import StudentNotifications from "@/pages/student/StudentNotifications";
 
-import StudentResult from "@/pages/student/StudentResult";
+import StudentResult from "./pages/student/StudentResult";
 import StudentPlacement from "@/pages/student/StudentPlacement";
 import StudentSeating from "@/pages/student/StudentSeating";
 import StudentExamTimetable from "@/pages/student/StudentExamTimetable";
@@ -102,6 +103,7 @@ const App = () => (
             <Route path="/faculty/attendance/edit" element={<ProtectedRoute allowedRole="faculty"><FacultyAttendanceEdit /></ProtectedRoute>} />
             <Route path="/faculty/marks" element={<ProtectedRoute allowedRole="faculty"><FacultyMarks /></ProtectedRoute>} />
             <Route path="/faculty/students" element={<ProtectedRoute allowedRole="faculty"><FacultyStudents /></ProtectedRoute>} />
+            <Route path="/faculty/timetable" element={<ProtectedRoute allowedRole="faculty"><FacultyTimetable /></ProtectedRoute>} />
             <Route path="/faculty/notifications" element={<ProtectedRoute allowedRole="faculty"><FacultyNotifications /></ProtectedRoute>} />
             <Route path="/faculty/profile" element={<ProtectedRoute allowedRole="faculty"><ProfilePage /></ProtectedRoute>} />
 

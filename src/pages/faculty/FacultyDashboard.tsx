@@ -22,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 const financialDetails = {
   annualSalary: "12,00,000",
@@ -30,10 +31,22 @@ const financialDetails = {
   incentives: "50,000"
 };
 
-const upcomingClasses = [
-  { id: 1, courseName: "Data Structures", batch: "23CSBTB49", room: "Block A - 101", time: "10:00 AM - 11:30 AM" },
-  { id: 2, courseName: "Operating Systems", batch: "22CSBTB22", room: "Block B - 205", time: "1:00 PM - 2:30 PM" },
-];
+interface FacultyTimetableRow {
+  id: string;
+  day: string;
+  start_time: string;
+  end_time: string;
+  course_name: string;
+  batch_name: string;
+  section: string | null;
+  room: string | null;
+}
+
+interface StudentCourseRow {
+  course_id: string;
+  student_id: string;
+  status: string | null;
+}
 
 const meetings = [
   { id: 1, title: "Department Sync", organizer: "Dr. Smith (HOD)", type: "Meeting", date: "Today, 4:00 PM", invited: true },
@@ -42,63 +55,135 @@ const meetings = [
 
 export default function FacultyDashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
   
   const [myCourses, setMyCourses] = useState<any[]>([]);
+  const [todayClasses, setTodayClasses] = useState<FacultyTimetableRow[]>([]);
+  const [timetableReady, setTimetableReady] = useState(true);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [stats, setStats] = useState({
     myCourses: 0,
     totalStudents: 0,
-    avgAttendance: "Pending..."
+    avgAttendance: "N/A"
   });
 
   useEffect(() => {
     async function fetchFacultyStats() {
       if (!user?.id) return;
-      
-      // 1. Get Faculty UUID
-      const { data: facultyData } = await supabase
-        .from('faculty')
-        .select('id')
-        .eq('staff_id', user.id)
-        .single();
-        
-      if (!facultyData) return;
-      const facultyId = facultyData.id;
 
-      // 2. My Courses
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('faculty_id', facultyId);
-        
-      setMyCourses(coursesData || []);
-      const courseIds = (coursesData || []).map(c => c.id);
-      
-      // 3. Total Students in these courses
-      let totalStudents = 0;
+      const [{ data: byStaffId }, { data: byFacultyName }] = await Promise.all([
+        supabase.from('courses').select('*').eq('faculty_id', user.id),
+        supabase.from('courses').select('*').eq('faculty_name', user.name),
+      ]);
+
+      const mergedCoursesMap = new Map<string, any>();
+      (byStaffId || []).forEach((course) => mergedCoursesMap.set(course.id, course));
+      (byFacultyName || []).forEach((course) => mergedCoursesMap.set(course.id, course));
+      const coursesData = Array.from(mergedCoursesMap.values());
+      const courseIds = coursesData.map((c) => c.id);
+
+      let enrolledRows: StudentCourseRow[] = [];
       if (courseIds.length > 0) {
-        const { count } = await supabase
+        const { data } = await supabase
           .from('student_courses')
-          .select('*', { count: 'exact', head: true })
-          .in('course_id', courseIds)
-          .eq('status', 'enrolled');
-        totalStudents = count || 0;
+          .select('course_id, student_id, status')
+          .in('course_id', courseIds);
+        enrolledRows = (data || []) as StudentCourseRow[];
       }
-      
-      // 4. Avg Attendance for faculty
-      // To simplify, we get recent attendance given by this faculty or for their courses.
-      // Since attendance table only has student_id, date, status (and no course_id right now in mock maybe?),
-      // Actually let's just fetch global attendance if course_id isn't in attendance table.
-      // Wait, let's check attendance table.
-      
+
+      const activeEnrollments = enrolledRows.filter((row) => row.status !== 'dropped');
+      const enrollmentCountByCourse = new Map<string, number>();
+      activeEnrollments.forEach((row) => {
+        const current = enrollmentCountByCourse.get(row.course_id) || 0;
+        enrollmentCountByCourse.set(row.course_id, current + 1);
+      });
+
+      const coursesWithStrength = coursesData.map((course) => ({
+        ...course,
+        enrolled_students: enrollmentCountByCourse.get(course.id) || 0,
+      }));
+
+      setMyCourses(coursesWithStrength);
+
+      const courseNames = Array.from(new Set(coursesData.map((c) => c.name).filter(Boolean)));
+      let avgAttendance = "N/A";
+      if (courseNames.length > 0) {
+        const { data: attendanceRows } = await supabase
+          .from('attendance')
+          .select('status, course_name')
+          .in('course_name', courseNames)
+          .limit(5000);
+
+        const rows = (attendanceRows || []) as Array<{ status: string; course_name: string }>;
+        const attended = rows.filter((item) => item.status === 'present' || item.status === 'late').length;
+        avgAttendance = rows.length > 0 ? `${Math.round((attended / rows.length) * 100)}%` : "N/A";
+      }
+
       setStats({
         myCourses: courseIds.length,
-        totalStudents: totalStudents,
-        avgAttendance: "92%" // TODO: accurate query if possible
+        totalStudents: activeEnrollments.length,
+        avgAttendance,
       });
+
+      setLastSynced(new Date());
+      setDashboardLoading(false);
     }
     
     fetchFacultyStats();
+
+    const channel = supabase
+      .channel(`faculty-dashboard-live-${user?.id || 'unknown'}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'courses' }, () => fetchFacultyStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_courses' }, () => fetchFacultyStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => fetchFacultyStats())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
+
+  useEffect(() => {
+    const dayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+
+    const fetchTodayClasses = async () => {
+      if (!user?.id) return;
+
+      const { data, error } = await supabase
+        .from("timetable")
+        .select("id, day, start_time, end_time, course_name, batch_name, section, room")
+        .eq("faculty_staff_id", user.id)
+        .eq("is_active", true)
+        .eq("day", dayName)
+        .order("start_time", { ascending: true });
+
+      if (error) {
+        if (error.code === "PGRST205" || error.code === "42P01") {
+          setTimetableReady(false);
+          setTodayClasses([]);
+          return;
+        }
+
+        toast({ title: "Failed to load timetable", description: error.message, variant: "destructive" });
+        return;
+      }
+
+      setTimetableReady(true);
+      setTodayClasses((data || []) as FacultyTimetableRow[]);
+    };
+
+    fetchTodayClasses();
+
+    const channel = supabase
+      .channel(`faculty-dashboard-timetable-${user?.id || "unknown"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "timetable" }, () => fetchTodayClasses())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   // financialDetails mocking kept for UI visually:
 
@@ -114,6 +199,9 @@ export default function FacultyDashboard() {
             <Link to="/faculty/attendance"><CheckSquare className="mr-2 h-4 w-4" />Mark Attendance</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
+            <Link to="/faculty/timetable"><Calendar className="mr-2 h-4 w-4" />My Timetable</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
             <Link to="/faculty/marks"><FileText className="mr-2 h-4 w-4" />Update Marks</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
@@ -125,9 +213,21 @@ export default function FacultyDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="My Courses" value={stats.myCourses} icon={BookOpen} variant="secondary" />
         <StatCard title="Total Students" value={stats.totalStudents} icon={Users} variant="primary" />
-        <StatCard title="Avg Attendance" value={stats.avgAttendance} icon={ClipboardList} trend="2% up" trendUp />
+        <StatCard
+          title="Avg Attendance"
+          value={stats.avgAttendance}
+          icon={ClipboardList}
+          trend={dashboardLoading ? "Syncing..." : "From live records"}
+          trendUp={stats.avgAttendance !== "N/A"}
+        />
         <StatCard title="Pending Salary" value={`₹${financialDetails.pending}`} icon={IndianRupee} variant="accent" />
       </div>
+
+      {lastSynced && (
+        <p className="text-xs text-muted-foreground">
+          Dashboard synced at {lastSynced.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Financial Overview */}
@@ -163,27 +263,34 @@ export default function FacultyDashboard() {
             <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
               <Clock3 className="h-5 w-5 text-primary" /> Upcoming Classes
             </h3>
-            <Badge variant="secondary">{upcomingClasses.length} Today</Badge>
+            <Badge variant="secondary">{todayClasses.length} Today</Badge>
           </div>
+
+          {!timetableReady && (
+            <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm text-warning mb-3">
+              Timetable is not configured yet.
+            </div>
+          )}
+
           <div className="space-y-3">
-            {upcomingClasses.map((cls) => (
+            {todayClasses.map((cls) => (
               <div key={cls.id} className="rounded-lg border bg-muted/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-primary/40 transition-colors">
                 <div>
-                  <h4 className="font-semibold text-foreground">{cls.courseName}</h4>
+                  <h4 className="font-semibold text-foreground">{cls.course_name}</h4>
                   <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {cls.batch}</span>
-                    <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {cls.room}</span>
+                    <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {cls.batch_name}{cls.section ? `-${cls.section}` : ""}</span>
+                    <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {cls.room || "Room TBD"}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="whitespace-nowrap w-fit">
-                    <Clock3 className="h-3 w-3 mr-1" /> {cls.time}
+                    <Clock3 className="h-3 w-3 mr-1" /> {cls.start_time.slice(0, 5)} - {cls.end_time.slice(0, 5)}
                   </Badge>
                   <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </div>
             ))}
-            {upcomingClasses.length === 0 && (
+            {todayClasses.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">No upcoming classes today.</p>
             )}
           </div>
@@ -236,6 +343,12 @@ export default function FacultyDashboard() {
                 <p className="text-sm text-muted-foreground mt-1">{c.enrolled_students || 0}/{c.max_capacity || 60} students • {c.credits} credits</p>
               </div>
             ))}
+
+            {myCourses.length === 0 && (
+              <div className="bg-card rounded-xl p-4 border border-dashed text-sm text-muted-foreground">
+                No courses assigned yet.
+              </div>
+            )}
           </div>
         </div>
       </div>

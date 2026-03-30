@@ -17,6 +17,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
   logout: (reason?: string) => void;
+  setUserProfile: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,6 +43,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (reason) {
       toast.error(reason, { duration: 5000 });
     }
+  }, []);
+
+  const setUserProfile = useCallback((updates: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uniflow_user', JSON.stringify(next));
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -162,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, setUserProfile }}>
       {children}
       
       <AlertDialog open={showSessionExpired} onOpenChange={setShowSessionExpired}>

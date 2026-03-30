@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import StatCard from "@/components/StatCard";
 import { adminStats, monthlyAttendanceData, departmentEnrollment, feeCollectionData } from "@/lib/mock-data";
 import { supabase } from "@/lib/supabase";
@@ -22,9 +22,38 @@ const internationalMetrics = [
   { title: "Languages Supported", value: "9", note: "Portal + student services", icon: Languages },
 ];
 
+interface AttendanceRow {
+  course_name: string | null;
+  status: string | null;
+  date: string | null;
+  batch_name: string | null;
+}
+
+interface CourseAttendanceSummary {
+  courseName: string;
+  records: number;
+  present: number;
+  late: number;
+  absent: number;
+  attendanceRate: number;
+}
+
+const isAttendanceTableMissing = (errorCode?: string) => {
+  return errorCode === "PGRST205" || errorCode === "42P01";
+};
+
+const toISODate = (value: string | null | undefined) => {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+};
+
 export default function AdminDashboard() {
   const [now, setNow] = useState(new Date());
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceTableReady, setAttendanceTableReady] = useState(true);
+  const [attendanceLastUpdated, setAttendanceLastUpdated] = useState<Date | null>(null);
 
   const [liveStats, setLiveStats] = useState({
     totalStudents: 0,
@@ -32,6 +61,73 @@ export default function AdminDashboard() {
     totalCourses: 0,
     totalDepartments: 0
   });
+
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const attendanceOverview = useMemo(() => {
+    const todaysRows = attendanceRows.filter((item) => toISODate(item.date) === todayDate);
+    const courseMap = new Map<string, CourseAttendanceSummary>();
+
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+
+    todaysRows.forEach((item) => {
+      const courseName = (item.course_name || "Unassigned Course").trim() || "Unassigned Course";
+      const status = (item.status || "").toLowerCase();
+
+      const current = courseMap.get(courseName) || {
+        courseName,
+        records: 0,
+        present: 0,
+        late: 0,
+        absent: 0,
+        attendanceRate: 0,
+      };
+
+      current.records += 1;
+
+      if (status === "present") {
+        current.present += 1;
+        present += 1;
+      } else if (status === "late") {
+        current.late += 1;
+        late += 1;
+      } else {
+        current.absent += 1;
+        absent += 1;
+      }
+
+      courseMap.set(courseName, current);
+    });
+
+    const courses = Array.from(courseMap.values())
+      .map((item) => ({
+        ...item,
+        attendanceRate: item.records > 0
+          ? Math.round(((item.present + item.late) / item.records) * 100)
+          : 0,
+      }))
+      .sort((a, b) => {
+        if (a.attendanceRate !== b.attendanceRate) return a.attendanceRate - b.attendanceRate;
+        return b.records - a.records;
+      });
+
+    const totalRecords = todaysRows.length;
+    const overallRate = totalRecords > 0
+      ? Math.round(((present + late) / totalRecords) * 100)
+      : 0;
+
+    return {
+      totalRecords,
+      present,
+      late,
+      absent,
+      overallRate,
+      activeCourses: courses.length,
+      courses,
+    };
+  }, [attendanceRows, todayDate]);
 
   useEffect(() => {
     async function fetchStats() {
@@ -78,6 +174,45 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
+    const fetchAttendance = async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("course_name, status, date, batch_name")
+        .order("date", { ascending: false })
+        .limit(5000);
+
+      if (error) {
+        if (isAttendanceTableMissing(error.code)) {
+          setAttendanceTableReady(false);
+          setAttendanceRows([]);
+        }
+        setAttendanceLoading(false);
+        return;
+      }
+
+      setAttendanceTableReady(true);
+      setAttendanceRows((data || []) as AttendanceRow[]);
+      setAttendanceLastUpdated(new Date());
+      setAttendanceLoading(false);
+    };
+
+    fetchAttendance();
+
+    const channel = supabase
+      .channel("admin-dashboard-attendance-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "attendance" },
+        () => fetchAttendance(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -107,10 +242,110 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Attendance Rate" value={`${adminStats.attendanceRate}%`} icon={ClipboardList} trend="2% improvement" trendUp />
+        <StatCard
+          title="Attendance Rate"
+          value={`${attendanceOverview.overallRate}%`}
+          icon={ClipboardList}
+          trend={attendanceLoading ? "Loading live data..." : `${attendanceOverview.totalRecords} records today`}
+          trendUp={attendanceOverview.overallRate >= 75}
+        />
         <StatCard title="Fee Collection" value={`${adminStats.feeCollectionRate}%`} icon={IndianRupee} trend="₹245K pending" />
         <StatCard title="Pending Fees" value={`₹${(adminStats.pendingFees / 1000).toFixed(0)}K`} icon={TrendingUp} />
         <StatCard title="Notifications" value={adminStats.activeNotifications} icon={Bell} />
+      </div>
+
+      <div className="bg-card rounded-xl p-5 shadow-card border">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-display font-semibold text-foreground">Attendance Tracking</h3>
+            <p className="text-sm text-muted-foreground">Monitor attendance across all courses in real time</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              <Clock3 className="h-3.5 w-3.5" /> Live
+            </Badge>
+            {attendanceLastUpdated && (
+              <span className="text-xs text-muted-foreground">
+                Updated {attendanceLastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {!attendanceTableReady ? (
+          <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm text-warning">
+            Attendance table is not configured yet.
+          </div>
+        ) : attendanceLoading ? (
+          <div className="text-sm text-muted-foreground">Loading realtime attendance...</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Today's Records</p>
+                <p className="text-lg font-display font-semibold text-foreground">{attendanceOverview.totalRecords}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Active Courses</p>
+                <p className="text-lg font-display font-semibold text-foreground">{attendanceOverview.activeCourses}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Present + Late</p>
+                <p className="text-lg font-display font-semibold text-emerald-600">{attendanceOverview.present + attendanceOverview.late}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Absent</p>
+                <p className="text-lg font-display font-semibold text-red-600">{attendanceOverview.absent}</p>
+              </div>
+            </div>
+
+            {attendanceOverview.courses.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No attendance records found for today.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground bg-muted/30 uppercase border-b">
+                    <tr>
+                      <th className="px-3 py-2 rounded-tl-lg">Course</th>
+                      <th className="px-3 py-2">Records</th>
+                      <th className="px-3 py-2">Present</th>
+                      <th className="px-3 py-2">Late</th>
+                      <th className="px-3 py-2">Absent</th>
+                      <th className="px-3 py-2 rounded-tr-lg">Attendance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {attendanceOverview.courses.map((course) => (
+                      <tr key={course.courseName} className="hover:bg-muted/10 transition-colors">
+                        <td className="px-3 py-3 font-medium text-foreground whitespace-nowrap">{course.courseName}</td>
+                        <td className="px-3 py-3">{course.records}</td>
+                        <td className="px-3 py-3 text-emerald-600">{course.present}</td>
+                        <td className="px-3 py-3 text-amber-600">{course.late}</td>
+                        <td className="px-3 py-3 text-red-600">{course.absent}</td>
+                        <td className="px-3 py-3 min-w-[180px]">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full",
+                                  course.attendanceRate >= 75 ? "bg-emerald-500" : course.attendanceRate >= 60 ? "bg-amber-500" : "bg-red-500",
+                                )}
+                                style={{ width: `${course.attendanceRate}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium w-10 text-right">{course.attendanceRate}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
