@@ -41,6 +41,10 @@ export default function DataTable<T extends object>({
     ? data.filter(item => searchKeys.some(key => String(getFieldValue(item, key) ?? "").toLowerCase().includes(search.toLowerCase())))
     : data;
 
+  const renderCellValue = (item: T, col: Column<T>) => {
+    return col.render ? col.render(item) : String(getFieldValue(item, col.key) ?? "");
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (!onRowSelectionChange) return;
     if (checked) {
@@ -65,7 +69,7 @@ export default function DataTable<T extends object>({
   return (
     <div className="space-y-4">
       {searchKeys.length > 0 && (
-        <div className="relative max-w-sm">
+        <div className="relative w-full md:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder={searchPlaceholder}
@@ -75,7 +79,46 @@ export default function DataTable<T extends object>({
           />
         </div>
       )}
-      <div className="w-full">
+
+      <div className="space-y-3 md:hidden">
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">
+            No records found
+          </div>
+        ) : (
+          filtered.map((item, i) => {
+            const rawItemId = item[idKey];
+            const itemId = rawItemId === undefined || rawItemId === null || rawItemId === ""
+              ? `row-${i}`
+              : String(rawItemId);
+            const isSelected = selectedRows.includes(itemId);
+
+            return (
+              <div key={itemId} className="rounded-xl border bg-card p-4 shadow-sm space-y-3" data-state={isSelected ? "selected" : undefined}>
+                {enableRowSelection && (
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <span className="text-xs text-muted-foreground">Select Row</span>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) => handleSelectRow(!!checked, itemId)}
+                      aria-label={`Select row ${itemId}`}
+                    />
+                  </div>
+                )}
+
+                {columns.map((col) => (
+                  <div key={col.key} className="grid grid-cols-[110px_1fr] gap-2 text-sm items-start">
+                    <span className="text-muted-foreground">{col.label}</span>
+                    <div className="text-foreground break-words">{renderCellValue(item, col)}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden md:block w-full">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -121,7 +164,7 @@ export default function DataTable<T extends object>({
                     )}
                     {columns.map(col => (
                       <TableCell key={col.key}>
-                        {col.render ? col.render(item) : String(getFieldValue(item, col.key) ?? "")}
+                        {renderCellValue(item, col)}
                       </TableCell>
                     ))}
                   </TableRow>
