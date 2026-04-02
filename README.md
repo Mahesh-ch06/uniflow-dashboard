@@ -6,7 +6,7 @@ An end-to-end university academic operations platform built as a course project,
 
 ### Student
 - Login ID / Hall Ticket: `2303A52037`
-- Password: `@Mahesh06`
+- Password: `UniManage@2026`
 
 ### Faculty
 - Login ID: `F009`
@@ -14,7 +14,7 @@ An end-to-end university academic operations platform built as a course project,
 
 ### Admin
 - Email: `chitikeshimahesh6@gmail.com`
-- Password: `@Mahesh06`
+- Password: `@Mahesh06..`
 
 ---
 
