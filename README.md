@@ -5,7 +5,7 @@ An end-to-end university academic operations platform built as a course project,
 ## Demo Login Credentials
 
 ### Student
-- Login ID / Hall Ticket: `2303A52037`
+- Login ID / Hall Ticket: `2303A52037` Alternatively, you may use your own hall ticket number and log in with the default password.
 - Password: `UniManage@2026`
 
 ### Faculty
