@@ -171,7 +171,7 @@ Key directories:
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone <your-repo-url>
+   git clone <https://github.com/Mahesh-ch06/uniflow-dashboard.git>
    cd uniflow-dashboard
    ```
 2. Install dependencies:
