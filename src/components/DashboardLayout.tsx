@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -110,13 +110,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
-
-  if (!user) return null;
-
-  const config = roleConfig[user.role];
+  const userRole = user?.role ?? "student";
+  const config = roleConfig[userRole];
 
   let yearOfStudy = 1;
-  if (user?.role === 'student' && user.id) {
+  if (userRole === "student" && user?.id) {
     const admissionYearRaw = parseInt('20' + user.id.substring(0, 2), 10);
     const date = new Date();
     const currentYearDate = date.getFullYear();
@@ -127,7 +125,37 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const visibleNav = config.nav.filter(item => !item.minYear || yearOfStudy >= item.minYear);
 
-  const refreshNotificationCount = async () => {
+  const getPrimaryPath = (item: NavItem) => {
+    return item.path || item.subItems?.[0]?.path;
+  };
+
+  const isRouteActive = (path?: string) => {
+    if (!path) return false;
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+
+  const mobileQuickNav = useMemo(() => {
+    const priorities: Record<"admin" | "faculty" | "student", string[]> = {
+      admin: ["Dashboard", "Attendance", "Fees", "Timetable", "Notifications"],
+      faculty: ["Dashboard", "Attendance", "Timetable", "Notifications", "Profile"],
+      student: ["Dashboard", "Attendance", "Timetable", "Notifications", "Profile"],
+    };
+
+    const desired = priorities[userRole];
+    const resolved = desired
+      .map((label) => visibleNav.find((item) => item.label === label))
+      .filter(Boolean)
+      .map((item) => ({
+        label: item!.label,
+        icon: item!.icon,
+        path: getPrimaryPath(item!),
+      }))
+      .filter((item) => Boolean(item.path));
+
+    return resolved.slice(0, 5);
+  }, [userRole, visibleNav]);
+
+  const refreshNotificationCount = useCallback(async () => {
     if (!user?.id) return;
 
     const [{ data: notificationsData, error: notificationsError }, { data: statesData, error: statesError }] = await Promise.all([
@@ -167,7 +195,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const unreadCount = merged.filter((item) => !item.is_read).length;
 
     setNotificationCount(unreadCount);
-  };
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -198,7 +226,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, user?.role]);
+  }, [refreshNotificationCount, toast, user?.id, user?.role]);
+
+  if (!user) return null;
 
   const handleLogout = () => {
     logout();
@@ -349,7 +379,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         {/* Top bar */}
         <header className="h-16 bg-card border-b border-border flex items-center justify-between px-3 lg:px-6 shadow-card min-w-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { if (window.innerWidth < 1024) setMobileOpen(true); else setSidebarOpen(!sidebarOpen); }}>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { if (window.innerWidth < 1024) setMobileOpen((prev) => !prev); else setSidebarOpen(!sidebarOpen); }}>
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
             <div className="min-w-0 truncate">
@@ -377,7 +407,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 pb-24 lg:pb-6 overflow-y-auto">
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, y: 8 }}
@@ -387,6 +417,31 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {children}
           </motion.div>
         </main>
+
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-card/95 backdrop-blur pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
+          <div className="grid grid-cols-5 gap-1 px-2 pt-2">
+            {mobileQuickNav.map((item) => {
+              const active = isRouteActive(item.path);
+              const Icon = item.icon;
+
+              return (
+                <button
+                  key={item.label}
+                  onClick={() => {
+                    if (item.path) navigate(item.path);
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[11px] transition-colors",
+                    active ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="truncate max-w-[60px]">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );

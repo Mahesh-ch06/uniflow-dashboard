@@ -25,6 +25,28 @@ type ProfilePreferences = {
   marketingUpdates: boolean;
 };
 
+type StudentProfileRow = {
+  hall_ticket_no: string;
+  name: string | null;
+  department: string | null;
+  batch_name: string | null;
+  section: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
+type FacultyProfileRow = {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  department: string | null;
+};
+
+type AdminProfileRow = {
+  name: string | null;
+  email: string | null;
+};
+
 const isColumnMissing = (errorCode?: string) => {
   return errorCode === "42703" || errorCode === "PGRST204";
 };
@@ -64,11 +86,10 @@ export default function ProfilePage() {
     confirmPassword: "",
   });
   const [updatingPassword, setUpdatingPassword] = useState(false);
-
-  if (!user) return null;
+  const userRole = user?.role ?? "student";
 
   const editableRules = useMemo(() => {
-    if (user.role === "student") {
+    if (userRole === "student") {
       return {
         canEditEmail: true,
         canEditPhone: true,
@@ -87,14 +108,14 @@ export default function ProfilePage() {
       canEditBatch: false,
       canEditSection: false,
     };
-  }, [user.role]);
+  }, [userRole]);
 
   const profileCompleteness = useMemo(() => {
     const values = [form.name, form.email, form.phone, form.department];
-    if (user.role === "student") values.push(form.batch, form.section);
+    if (userRole === "student") values.push(form.batch, form.section);
     const filled = values.filter((value) => value && value.trim().length > 0).length;
     return Math.round((filled / values.length) * 100);
-  }, [form, user.role]);
+  }, [form, userRole]);
 
   const hasUnsavedChanges = useMemo(() => {
     if (!initialForm) return false;
@@ -102,12 +123,15 @@ export default function ProfilePage() {
   }, [form, initialForm]);
 
   const canUpdateProfile = useMemo(() => {
+    if (!user) return false;
     if (loading || saving || !hasUnsavedChanges) return false;
-    if (user.role === "student" && !studentContactColumnsAvailable) return false;
+    if (userRole === "student" && !studentContactColumnsAvailable) return false;
     return true;
-  }, [hasUnsavedChanges, loading, saving, studentContactColumnsAvailable, user.role]);
+  }, [hasUnsavedChanges, loading, saving, studentContactColumnsAvailable, user, userRole]);
 
   useEffect(() => {
+    if (!user) return;
+
     const updateKey = `uniflow.lastProfileUpdate.${user.id}`;
     setLastProfileUpdate(localStorage.getItem(updateKey));
 
@@ -167,7 +191,7 @@ export default function ProfilePage() {
             .single();
 
           if (!fallback.error && fallback.data) {
-            const data = fallback.data as any;
+            const data = fallback.data as StudentProfileRow;
             setForm({
               name: data.name || user.name,
               email: user.email || "",
@@ -191,7 +215,7 @@ export default function ProfilePage() {
         }
 
         if (!profileRes.error && profileRes.data) {
-          const data = profileRes.data as any;
+          const data = profileRes.data as StudentProfileRow;
           setForm({
             name: data.name || user.name,
             email: data.email || user.email || "",
@@ -221,7 +245,7 @@ export default function ProfilePage() {
           .eq("staff_id", user.id)
           .single();
 
-        const d = data as any;
+        const d = data as FacultyProfileRow | null;
         setForm({
           name: d?.name || user.name,
           email: d?.email || user.email || "",
@@ -248,7 +272,7 @@ export default function ProfilePage() {
         .eq("id", user.id)
         .single();
 
-      const d = data as any;
+      const d = data as AdminProfileRow | null;
       setForm({
         name: d?.name || user.name,
         email: d?.email || user.email || "",
@@ -270,7 +294,9 @@ export default function ProfilePage() {
 
     fetchProfile();
     fetchPreferences();
-  }, [user.id, user.role]);
+  }, [toast, user]);
+
+  if (!user) return null;
 
   const handleSave = async () => {
     const normalizedEmail = form.email.trim();

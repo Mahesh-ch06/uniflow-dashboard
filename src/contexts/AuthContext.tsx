@@ -21,6 +21,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const INACTIVITY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [showSessionExpired, setShowSessionExpired] = useState(false);
@@ -33,8 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     }
   });
-
-  const INACTIVITY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
 
   const logout = useCallback((reason?: string) => {
     setUser(null);
