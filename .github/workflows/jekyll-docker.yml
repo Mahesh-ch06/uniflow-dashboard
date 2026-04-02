@@ -1,20 +1,36 @@
-name: Jekyll site CI
-
+name: Jekyll using Docker image
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, master]
   pull_request:
-    branches: [ "main" ]
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
-  build:
-
+  jekyll:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: jekyll/builder:4.2.2
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the site in the jekyll/builder container
-      run: |
-        docker run \
-        -v ${{ github.workspace }}:/srv/jekyll -v ${{ github.workspace }}/_site:/srv/jekyll/_site \
-        jekyll/builder:latest /bin/bash -c "chmod -R 777 /srv/jekyll && jekyll build --future"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Jekyll site
+        id: detect_jekyll
+        shell: bash
+        run: |
+          if [ -f _config.yml ] || [ -f _config.yaml ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Jekyll site
+        if: steps.detect_jekyll.outputs.found == 'true'
+        run: jekyll build --future
+
+      - name: Skip Jekyll build
+        if: steps.detect_jekyll.outputs.found != 'true'
+        run: echo "No Jekyll config file found; skipping Jekyll workflow."

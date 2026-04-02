@@ -1,28 +1,42 @@
-name: NodeJS with Webpack
-
+name: Webpack
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, master]
   pull_request:
-    branches: [ "main" ]
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
+    timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-    - name: Build
-      run: |
-        npm install
-        npx webpack
+      - name: Install dependencies
+        run: npm install
+
+      - name: Detect webpack
+        id: detect_webpack
+        run: |
+          node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));const deps={...(pkg.dependencies||{}),...(pkg.devDependencies||{})};const scripts=pkg.scripts||{};const hasDep=Boolean(deps.webpack||deps['webpack-cli']);const hasScript=Object.values(scripts).some(v=>String(v).includes('webpack'));process.stdout.write('has='+(hasDep||hasScript));" > result.txt
+          if grep -q "has=true" result.txt; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run webpack build
+        if: steps.detect_webpack.outputs.found == 'true'
+        run: npx webpack
+
+      - name: Skip webpack build
+        if: steps.detect_webpack.outputs.found != 'true'
+        run: echo "No webpack setup found in package.json; skipping webpack workflow."

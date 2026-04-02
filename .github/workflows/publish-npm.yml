@@ -1,0 +1,46 @@
+name: Publish Node.js Package
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate package metadata for npm
+        id: validate_pkg
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const publishable=!Boolean(p.private);console.log('publishable='+publishable);if(!publishable){console.log('reason=package.json has private=true');}" > pkg-check.txt
+          if grep -q "publishable=true" pkg-check.txt; then
+            echo "publishable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+          fi
+          cat pkg-check.txt
+
+      - name: Publish to npm
+        if: steps.validate_pkg.outputs.publishable == 'true'
+        run: npm publish --provenance --access public
+
+      - name: Skip publish
+        if: steps.validate_pkg.outputs.publishable != 'true'
+        run: echo "Skipping npm publish because package.json has private=true."
