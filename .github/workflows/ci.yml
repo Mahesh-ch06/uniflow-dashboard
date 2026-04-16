@@ -1,0 +1,50 @@
+name: CI Setup
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Show repository structure
+        run: |
+          tree -L 2 || ls -R | head -100
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Build React App
+        run: npm run build
+
+      # Uncomment and adjust if you have backend folder and tests
+      # - name: Install Backend Dependencies
+      #   run: |
+      #     cd backend
+      #     npm install
+      #
+      # - name: Run Backend Tests
+      #   run: |
+      #     cd backend
+      #     npm test
+
+      # Add any post-setup steps here
+      - name: Post Setup Node
+        run: echo "Post setup node step"
+
+      - name: Post Checkout Code
+        run: echo "Post checkout code step"
+
+      - name: Complete job
+        run: echo "CI job complete!"
