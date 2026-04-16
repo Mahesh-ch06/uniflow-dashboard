@@ -1,48 +1,50 @@
-name: Deno
+name: CI Setup
+
 on:
   push:
-    branches: [main, master]
+    branches: [ main ]
   pull_request:
-    branches: [main, master]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
-  test:
+  setup:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Detect Deno project
-        id: detect_deno
-        shell: bash
+      - name: Show repository structure
         run: |
-          if [ -f deno.json ] || [ -f deno.jsonc ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
+          tree -L 2 || ls -R | head -100
 
-      - name: Setup Deno
-        if: steps.detect_deno.outputs.found == 'true'
-        uses: denoland/setup-deno@v1
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          deno-version: v1.x
+          node-version: '20.x'
 
-      - name: Format check
-        if: steps.detect_deno.outputs.found == 'true'
-        run: deno fmt --check
+      - name: Install Frontend Dependencies
+        run: npm install
 
-      - name: Lint
-        if: steps.detect_deno.outputs.found == 'true'
-        run: deno lint
+      - name: Build React App
+        run: npm run build
 
-      - name: Test
-        if: steps.detect_deno.outputs.found == 'true'
-        run: deno test --allow-all
+      # Uncomment and adjust if you have backend folder and tests
+      # - name: Install Backend Dependencies
+      #   run: |
+      #     cd backend
+      #     npm install
+      #
+      # - name: Run Backend Tests
+      #   run: |
+      #     cd backend
+      #     npm test
 
-      - name: Skip Deno checks
-        if: steps.detect_deno.outputs.found != 'true'
-        run: echo "No deno.json/deno.jsonc found; skipping Deno workflow."
+      # Add any post-setup steps here
+      - name: Post Setup Node
+        run: echo "Post setup node step"
+
+      - name: Post Checkout Code
+        run: echo "Post checkout code step"
+
+      - name: Complete job
+        run: echo "CI job complete!"
