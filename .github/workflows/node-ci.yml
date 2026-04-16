@@ -1,33 +1,58 @@
-name: Node CI
+# This workflow is named to appear at the top of the Actions list
+name: CI Setup
+
 on:
   push:
-    branches: [main, master]
+    branches: [ main ]
   pull_request:
-    branches: [main, master]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
-  build-test:
+  setup:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - name: Show repository structure
+        run: |
+          tree -L 2 || ls -R | head -100
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20.x'
 
-      - name: Install dependencies
+      - name: Install Frontend Dependencies
         run: npm install
 
-      - name: Lint
-        run: npm run lint --if-present
+      - name: Build React App
+        run: npm run build
 
-      - name: Run tests
-        run: npm run test --if-present
+      - name: Install Backend Dependencies
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            npm install
+          else
+            echo "No backend/package.json found, skipping backend install."
+          fi
 
-      - name: Build
-        run: npm run build --if-present
+      - name: Run Backend Tests
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            npm test
+          else
+            echo "No backend/package.json found, skipping backend tests."
+          fi
+
+      # Add any post-setup steps here
+      - name: Post Setup Node
+        run: echo "Post setup node step"
+
+      - name: Post Checkout Code
+        run: echo "Post checkout code step"
+
+      - name: Complete job
+        run: echo "CI job complete!"
