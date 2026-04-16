@@ -1,3 +1,4 @@
+# This workflow is named to appear at the top of the Actions list
 name: CI Setup
 
 on:
@@ -28,16 +29,23 @@ jobs:
       - name: Build React App
         run: npm run build
 
-      # Uncomment and adjust if you have backend folder and tests
-      # - name: Install Backend Dependencies
-      #   run: |
-      #     cd backend
-      #     npm install
-      #
-      # - name: Run Backend Tests
-      #   run: |
-      #     cd backend
-      #     npm test
+      - name: Install Backend Dependencies
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            npm install
+          else
+            echo "No backend/package.json found, skipping backend install."
+          fi
+
+      - name: Run Backend Tests
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            npm test
+          else
+            echo "No backend/package.json found, skipping backend tests."
+          fi
 
       # Add any post-setup steps here
       - name: Post Setup Node
